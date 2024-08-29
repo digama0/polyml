@@ -149,11 +149,11 @@ am__libpolyml_la_SOURCES_DIST = arb.cpp bitmap.cpp bytecode.cpp \
 	processes.cpp profiling.cpp quick_gc.cpp reals.cpp \
 	rts_module.cpp rtsentry.cpp run_time.cpp save_vec.cpp \
 	savestate.cpp scanaddrs.cpp sharedata.cpp sighandler.cpp \
-	statistics.cpp timing.cpp xwindows.cpp interpreter.cpp \
-	arm64.cpp arm64assembly.S x86_dep.cpp x86assembly_gas64.S \
-	x86assembly_gas32.S machoexport.cpp elfexport.cpp \
-	pecoffexport.cpp basicio.cpp unix_specific.cpp osmemunix.cpp \
-	winstartup.cpp winbasicio.cpp winguiconsole.cpp \
+	small_exporter.cpp statistics.cpp timing.cpp xwindows.cpp \
+	interpreter.cpp arm64.cpp arm64assembly.S x86_dep.cpp \
+	x86assembly_gas64.S x86assembly_gas32.S machoexport.cpp \
+	elfexport.cpp pecoffexport.cpp basicio.cpp unix_specific.cpp \
+	osmemunix.cpp winstartup.cpp winbasicio.cpp winguiconsole.cpp \
 	windows_specific.cpp osmemwin.cpp
 @ARCHARM_64_FALSE@@ARCHI386_FALSE@@ARCHX86_64_FALSE@am__objects_1 = interpreter.lo
 @ARCHARM_64_TRUE@@ARCHI386_FALSE@@ARCHX86_64_FALSE@am__objects_1 =  \
@@ -180,8 +180,8 @@ am_libpolyml_la_OBJECTS = arb.lo bitmap.lo bytecode.lo \
 	polystring.lo process_env.lo processes.lo profiling.lo \
 	quick_gc.lo reals.lo rts_module.lo rtsentry.lo run_time.lo \
 	save_vec.lo savestate.lo scanaddrs.lo sharedata.lo \
-	sighandler.lo statistics.lo timing.lo xwindows.lo \
-	$(am__objects_1) $(am__objects_2) $(am__objects_3)
+	sighandler.lo small_exporter.lo statistics.lo timing.lo \
+	xwindows.lo $(am__objects_1) $(am__objects_2) $(am__objects_3)
 libpolyml_la_OBJECTS = $(am_libpolyml_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -229,11 +229,11 @@ am__depfiles_remade = ./$(DEPDIR)/arb.Plo ./$(DEPDIR)/arm64.Plo \
 	./$(DEPDIR)/run_time.Plo ./$(DEPDIR)/save_vec.Plo \
 	./$(DEPDIR)/savestate.Plo ./$(DEPDIR)/scanaddrs.Plo \
 	./$(DEPDIR)/sharedata.Plo ./$(DEPDIR)/sighandler.Plo \
-	./$(DEPDIR)/statistics.Plo ./$(DEPDIR)/timing.Plo \
-	./$(DEPDIR)/unix_specific.Plo ./$(DEPDIR)/winbasicio.Plo \
-	./$(DEPDIR)/windows_specific.Plo ./$(DEPDIR)/winguiconsole.Plo \
-	./$(DEPDIR)/winstartup.Plo ./$(DEPDIR)/x86_dep.Plo \
-	./$(DEPDIR)/x86assembly_gas32.Plo \
+	./$(DEPDIR)/small_exporter.Plo ./$(DEPDIR)/statistics.Plo \
+	./$(DEPDIR)/timing.Plo ./$(DEPDIR)/unix_specific.Plo \
+	./$(DEPDIR)/winbasicio.Plo ./$(DEPDIR)/windows_specific.Plo \
+	./$(DEPDIR)/winguiconsole.Plo ./$(DEPDIR)/winstartup.Plo \
+	./$(DEPDIR)/x86_dep.Plo ./$(DEPDIR)/x86assembly_gas32.Plo \
 	./$(DEPDIR)/x86assembly_gas64.Plo ./$(DEPDIR)/xwindows.Plo
 am__mv = mv -f
 CPPASCOMPILE = $(CCAS) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
@@ -521,6 +521,7 @@ noinst_HEADERS = \
 	scanaddrs.h \
 	sharedata.h \
 	sighandler.h \
+	small_exporter.h \
 	statistics.h \
 	sys.h \
 	timing.h \
@@ -569,6 +570,7 @@ libpolyml_la_SOURCES = \
     scanaddrs.cpp \
     sharedata.cpp \
     sighandler.cpp \
+    small_exporter.cpp \
     statistics.cpp \
     timing.cpp \
     xwindows.cpp \
@@ -703,6 +705,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/scanaddrs.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sharedata.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sighandler.Plo@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/small_exporter.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/statistics.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/timing.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/unix_specific.Plo@am__quote@ # am--include-marker
@@ -964,6 +967,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/scanaddrs.Plo
 	-rm -f ./$(DEPDIR)/sharedata.Plo
 	-rm -f ./$(DEPDIR)/sighandler.Plo
+	-rm -f ./$(DEPDIR)/small_exporter.Plo
 	-rm -f ./$(DEPDIR)/statistics.Plo
 	-rm -f ./$(DEPDIR)/timing.Plo
 	-rm -f ./$(DEPDIR)/unix_specific.Plo
@@ -1067,6 +1071,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/scanaddrs.Plo
 	-rm -f ./$(DEPDIR)/sharedata.Plo
 	-rm -f ./$(DEPDIR)/sighandler.Plo
+	-rm -f ./$(DEPDIR)/small_exporter.Plo
 	-rm -f ./$(DEPDIR)/statistics.Plo
 	-rm -f ./$(DEPDIR)/timing.Plo
 	-rm -f ./$(DEPDIR)/unix_specific.Plo

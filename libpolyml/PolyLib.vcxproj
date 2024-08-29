@@ -967,6 +967,7 @@
     <ClCompile Include="scanaddrs.cpp" />
     <ClCompile Include="sharedata.cpp" />
     <ClCompile Include="sighandler.cpp" />
+    <ClCompile Include="small_exporter.cpp" />
     <ClCompile Include="statistics.cpp" />
     <ClCompile Include="timing.cpp" />
     <ClCompile Include="unix_specific.cpp">
@@ -1066,6 +1067,7 @@
     <ClInclude Include="scanaddrs.h" />
     <ClInclude Include="sharedata.h" />
     <ClInclude Include="sighandler.h" />
+    <ClInclude Include="small_exporter.h" />
     <ClInclude Include="statistics.h" />
     <ClInclude Include="sys.h" />
     <ClInclude Include="timing.h" />

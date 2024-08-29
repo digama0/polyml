@@ -66,6 +66,7 @@
 #include "network.h"
 #include "machine_dep.h"
 #include "exporter.h"
+#include "small_exporter.h"
 #include "statistics.h"
 #include "savestate.h"
 #include "bytecode.h"
@@ -92,6 +93,7 @@ static entrypts entryPointTable[] =
     objSizeEPT,
     networkingEPT,
     exporterEPT,
+    smallExporterEPT,
     statisticsEPT,
     savestateEPT,
     machineSpecificEPT,

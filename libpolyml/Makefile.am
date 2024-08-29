@@ -95,6 +95,7 @@ noinst_HEADERS = \
 	scanaddrs.h \
 	sharedata.h \
 	sighandler.h \
+	small_exporter.h \
 	statistics.h \
 	sys.h \
 	timing.h \
@@ -143,6 +144,7 @@ libpolyml_la_SOURCES = \
     scanaddrs.cpp \
     sharedata.cpp \
     sighandler.cpp \
+    small_exporter.cpp \
     statistics.cpp \
     timing.cpp \
     xwindows.cpp \
