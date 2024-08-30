@@ -117,15 +117,17 @@ struct ProcessExportAddresses
     }
 
     void Process(POLYUNSIGNED root) {
-        PolyWord w = PolyWord::FromUnsigned(root);
-        if (w.IsTagged()) {
-            WriteWord(w.AsUnsigned());
+        PolyWord rootw = PolyWord::FromUnsigned(root);
+        if (rootw.IsTagged()) {
+            WriteWord(rootw.AsUnsigned());
             return;
         }
-        ASSERT(w.IsDataPtr());
+        ASSERT(rootw.IsDataPtr());
+
         m_stack.push_back(root);
+
         std::vector<size_t> cycles;
-        POLYUNSIGNED curr = 1;
+        POLYUNSIGNED curr = 0;
         while (!m_stack.empty()) {
             POLYUNSIGNED w = m_stack.back();
             bool cycle = (w & 1) != 0;
@@ -144,8 +146,8 @@ struct ProcessExportAddresses
                 continue;
             }
 
-            m_index[w] = curr;
             curr += 1 << POLY_TAGSHIFT;
+            m_index[w] = curr;
 
             POLYUNSIGNED lengthWord = obj->LengthWord();
             ASSERT (OBJ_IS_LENGTH(lengthWord));
@@ -153,7 +155,8 @@ struct ProcessExportAddresses
 
             size_t length = OBJ_OBJECT_LENGTH(lengthWord);
             if (OBJ_IS_BYTE_OBJECT(lengthWord)) {
-                m_buff.insert(m_buff.end(), length * sizeof(PolyWord), *obj->AsBytePtr());
+                byte *ptr = obj->AsBytePtr();
+                m_buff.insert(m_buff.end(), ptr, ptr + length * sizeof(PolyWord));
                 continue;
             }
 
@@ -166,8 +169,8 @@ struct ProcessExportAddresses
             if (cycle && length != 0)
                 cycles.push_back(m_stack.size());
 
-            PolyWord *end = (PolyWord*)obj + length;
-            for (PolyWord *pt = (PolyWord*)obj; pt < end; pt++) {
+            PolyWord *end = obj->AsWordPtr() + length;
+            for (PolyWord *pt = obj->AsWordPtr(); pt < end; pt++) {
                 PolyWord val = *pt;
                 if (IS_INT(val) || val == PolyWord::FromUnsigned(0)) {
                     WriteWord(val.AsUnsigned());
@@ -181,14 +184,16 @@ struct ProcessExportAddresses
         for (size_t i : cycles) {
             PolyObject *obj = (PolyObject*)&m_buff[i];
             POLYUNSIGNED lengthWord = obj->LengthWord();
-            PolyWord *end = (PolyWord*)obj + OBJ_OBJECT_LENGTH(lengthWord);
-            for (PolyWord *pt = (PolyWord*)obj; pt < end; pt++) {
+            PolyWord *end = obj->AsWordPtr() + OBJ_OBJECT_LENGTH(lengthWord);
+            for (PolyWord *pt = obj->AsWordPtr(); pt < end; pt++) {
                 PolyWord val = *pt;
                 if (IS_INT(val) || val == PolyWord::FromUnsigned(0)) 
                     continue;
                 OverwriteWord((byte*)pt, m_index[val.AsUnsigned()]);
             }
         }
+
+        WriteWord(m_index[rootw.AsUnsigned()]);
     }
 
     TaskData *taskData;
