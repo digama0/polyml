@@ -100,11 +100,15 @@ struct ProcessExportAddresses
         if (OBJ_IS_BYTE_OBJECT(lengthWord))
             return; /* Nothing more to do */
 
-        if (OBJ_IS_CODE_OBJECT(lengthWord))
-            raise_exception_string(taskData, EXC_Fail, "can't export code objects");
+        if (OBJ_IS_CODE_OBJECT(lengthWord)) {
+            // raise_exception_string(taskData, EXC_Fail, "can't export code objects");
+            return;
+        }
 
-        if (OBJ_IS_CLOSURE_OBJECT(lengthWord))
-            raise_exception_string(taskData, EXC_Fail, "can't export closures");
+        if (OBJ_IS_CLOSURE_OBJECT(lengthWord)) {
+            // raise_exception_string(taskData, EXC_Fail, "can't export closures");
+            return;
+        }
 
         PolyWord *end = (PolyWord*)obj + OBJ_OBJECT_LENGTH(lengthWord);
         for (PolyWord *pt = (PolyWord*)obj; pt < end; pt++) {
@@ -160,11 +164,15 @@ struct ProcessExportAddresses
                 continue;
             }
 
-            if (OBJ_IS_CODE_OBJECT(lengthWord))
-                raise_exception_string(taskData, EXC_Fail, "can't export code objects");
+            if (OBJ_IS_CODE_OBJECT(lengthWord)) {
+                // raise_exception_string(taskData, EXC_Fail, "can't export code objects");
+                continue;
+            }
 
-            if (OBJ_IS_CLOSURE_OBJECT(lengthWord))
-                raise_exception_string(taskData, EXC_Fail, "can't export closures");
+            if (OBJ_IS_CLOSURE_OBJECT(lengthWord)) {
+                // raise_exception_string(taskData, EXC_Fail, "can't export closures");
+                continue;
+            }
 
             if (cycle && length != 0)
                 cycles.push_back(m_stack.size());
