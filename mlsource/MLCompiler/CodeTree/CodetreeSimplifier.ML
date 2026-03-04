@@ -1,5 +1,5 @@
 (*
-    Copyright (c) 2013, 2016-17, 2020-3 David C.J. Matthews
+    Copyright (c) 2013, 2016-17, 2020-3, 2025-6 David C.J. Matthews
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -451,14 +451,26 @@ struct
             SOME operation
         end
 
-    |   simpGeneral (context as {enterAddr, nextAddress, ...}) (Handle{exp, handler, exPacketAddr}) =
+    |   simpGeneral (context as {enterAddr, nextAddress, reprocess, ...}) (Handle{exp, handler, exPacketAddr}) =
         let (* We need to make a new binding for the exception packet. *)
             val expBody = simplify(exp, context)
             val newAddr = nextAddress()
             val () = enterAddr(exPacketAddr, (EnvGenLoad(LoadLocal newAddr), EnvSpecNone))
             val handleBody = simplify(handler, context)
         in
-            SOME(Handle{exp=expBody, handler=handleBody, exPacketAddr=newAddr})
+            (* If the expression cannot raise an exception we don't need the handler.  This could
+               arise from constant folding where we know that expression cannot raise, say, Overflow.
+               Similarly, if we know that the expression does raise an exception and the exception
+               packet is itself exception-free, we can evaluate the handler directly. *)
+            if exceptionFree expBody
+            then (reprocess := true; SOME expBody)
+            else case expBody of
+                Raise expPacket =>
+                    if exceptionFree expPacket
+                    then (reprocess := true; SOME(mkEnv([mkDec(newAddr, expPacket)], handleBody)))
+                    else SOME(Handle{exp=expBody, handler=handleBody, exPacketAddr=newAddr})
+
+            |   _ => SOME(Handle{exp=expBody, handler=handleBody, exPacketAddr=newAddr})
         end
 
     |   simpGeneral _ _ = NONE
@@ -821,7 +833,7 @@ struct
            we are trying to expand.  This could result in an infinitely recursive expansion.  It is only
            going to happen in very special circumstances such as a definition of the Y combinator.
            If we see that we don't attempt to expand inline.  It could be embedded in a tuple
-           or the closure of a function as well as passed directly. *)
+           or the closure of a function as well as passed directly. See Tests/Succeed/Test132.ML *)
         val isRecursiveArg =
             case function of
                 Extract extOrig =>
@@ -834,6 +846,19 @@ struct
                         |   containsFunction(_, v) = (v, FOLD_DESCEND)
                     in
                         List.exists(fn (c, _) => foldtree containsFunction false c) argList
+                    end
+            |   Constnt (cOrig, _) =>
+                    if Address.isShort cOrig then false (* Functors are short constants and "always inline" *)
+                    else
+                    let
+                        fun containsFunction(Constnt(thisC, _), v) = (v orelse wordEq(cOrig, thisC), FOLD_DESCEND)
+                        |   containsFunction(Lambda{closure, ...}, v) =
+                                (* Only the closure, not the body *)
+                                (foldl (fn (c, w) => foldtree containsFunction w (Extract c)) v closure, FOLD_DONT_DESCEND)
+                        |   containsFunction(Eval _, v) = (v, FOLD_DONT_DESCEND) (* OK if it's called *)
+                        |   containsFunction(_, v) = (v, FOLD_DESCEND)
+                    in
+                       List.exists(fn (c, _) => foldtree containsFunction false c) argList 
                     end
             |   _ => false
     in
@@ -1036,8 +1061,8 @@ struct
 
     and simpBinary(oper, arg1, arg2, context as {reprocess, ...}, tailDecs) =
     let
-        val (genArg1, decArg1, _ (*specArg1*)) = simpSpecial(arg1, context, tailDecs)
-        val (genArg2, decArgs, _ (*specArg2*)) = simpSpecial(arg2, context, decArg1)
+        val (genArg1, decArg1, specArg1) = simpSpecial(arg1, context, tailDecs)
+        val (genArg2, decArgs, specArg2) = simpSpecial(arg2, context, decArg1)
     in
         case (oper, genArg1, genArg2) of
             (WordComparison{test, isSigned}, Constnt(v1, _), Constnt(v2, _)) =>
@@ -1062,12 +1087,43 @@ struct
             in
                 (if testResult then CodeTrue else CodeFalse, decArgs, EnvSpecNone)
             end
-        
+
         |   (PointerEq, Constnt(v1, _), Constnt(v2, _)) =>
             (
                 reprocess := true;
                 (if RunCall.pointerEq(v1, v2) then CodeTrue else CodeFalse, decArgs, EnvSpecNone)
             )
+
+        |   (PointerEq, Constnt(v1, _), genArg2) =>
+            (
+                (* The pattern match test for nil generates a pointer equality test. That's different
+                   from the test for cons (::) which uses a test for short values.  Which test gets
+                   generated depends on which comes first. *)
+                case (specArg2, isShort v1) of
+                    (EnvSpecTuple _, true) => (CodeFalse, decArgs, EnvSpecNone) before reprocess := true
+                |   _ => (Binary{oper=oper, arg1=genArg1, arg2=genArg2}, decArgs, EnvSpecNone)
+            )
+
+        |   (PointerEq, genArg1, Constnt(v2, _)) =>
+            (
+                (* This case probably never arises from pattern matching but include it anyway. *)
+                case (specArg1, isShort v2) of
+                    (EnvSpecTuple _, true) => (CodeFalse, decArgs, EnvSpecNone) before reprocess := true
+                |   _ => (Binary{oper=oper, arg1=genArg1, arg2=genArg2}, decArgs, EnvSpecNone)
+            )
+
+            (* A general equality test against a short constant can be converted into pointer equality since they will only
+               be equal if they are the same short value.  This is reprocessed so the tests for PointerEq above will be
+               applied if appropriate. *)
+        |   (GeneralEquality, Constnt(v1, _), genArg2) =>
+                if isShort v1
+                then (Binary{oper=PointerEq, arg1=genArg1, arg2=genArg2}, decArgs, EnvSpecNone) before reprocess := true
+                else (Binary{oper=oper, arg1=genArg1, arg2=genArg2}, decArgs, EnvSpecNone)
+
+        |   (GeneralEquality, genArg1, Constnt(v2, _)) =>
+                if isShort v2
+                then (Binary{oper=PointerEq, arg1=genArg1, arg2=genArg2}, decArgs, EnvSpecNone) before reprocess := true
+                else (Binary{oper=oper, arg1=genArg1, arg2=genArg2}, decArgs, EnvSpecNone)
 
         |   (FixedPrecisionArith arithOp, Constnt(v1, _), Constnt(v2, _)) =>
             if not(isShort v1) orelse not(isShort v2)

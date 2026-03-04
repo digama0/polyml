@@ -1,9 +1,9 @@
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([Poly/ML],[5.9.1],[polyml AT polyml DOT org],[polyml])
+AC_INIT([Poly/ML],[5.9.2],[polyml AT polyml DOT org],[polyml])
 AM_INIT_AUTOMAKE
-AC_PREREQ([2.71])
+AC_PREREQ([2.72])
 # libtoolize recommends this line.
 AC_CONFIG_MACRO_DIR([m4])
 
@@ -119,7 +119,7 @@ AC_CHECK_HEADERS([ieeefp.h io.h math.h memory.h netinet/tcp.h arpa/inet.h poll.h
 AC_CHECK_HEADERS([stdarg.h sys/errno.h sys/filio.h sys/mman.h sys/resource.h])
 AC_CHECK_HEADERS([sys/sockio.h sys/stat.h termios.h sys/times.h])
 AC_CHECK_HEADERS([sys/types.h sys/uio.h sys/un.h sys/utsname.h sys/select.h sys/sysctl.h])
-AC_CHECK_HEADERS([sys/elf_SPARC.h sys/elf_386.h sys/elf_amd64.h asm/elf.h machine/reloc.h i386/elf_machdep.h])
+AC_CHECK_HEADERS([sys/elf_SPARC.h sys/elf_386.h sys/elf_amd64.h machine/reloc.h i386/elf_machdep.h])
 AC_CHECK_HEADERS([mach-o/x86_64/reloc.h mach-o/arm64/reloc.h private/system/arch/x86_64/arch_elf.h])
 AC_CHECK_HEADERS([windows.h tchar.h semaphore.h])
 AC_CHECK_HEADERS([stdint.h inttypes.h])
@@ -329,7 +329,6 @@ AC_C_BIGENDIAN
 AC_FUNC_ERROR_AT_LINE
 AC_FUNC_GETGROUPS
 AC_FUNC_GETPGRP
-AC_PROG_GCC_TRADITIONAL
 AC_FUNC_SELECT_ARGTYPES
 AC_FUNC_STAT
 AC_FUNC_STRTOD

@@ -2,7 +2,7 @@
     Title:     Write out a database as an ELF object file
     Author:    David Matthews.
 
-    Copyright (c) 2006-7, 2011, 2016-18, 2020-21 David C. J. Matthews
+    Copyright (c) 2006-7, 2011, 2016-18, 2020-21, 2025 David C. J. Matthews
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -38,10 +38,6 @@
 
 #ifdef HAVE_ERRNO_H
 #include <errno.h>
-#endif
-
-#ifdef HAVE_TIME_H
-#include <time.h>
 #endif
 
 #ifdef HAVE_ASSERT_H
@@ -93,11 +89,6 @@
 #include <sys/elf_amd64.h>
 #endif
 
-// Android has the ARM relocation symbol here
-#ifdef HAVE_ASM_ELF_H
-#include <asm/elf.h>
-#endif
-
 // NetBSD relocation symbols
 #ifdef HAVE_I386_ELF_MACHDEP_H
 #include <i386/elf_machdep.h>
@@ -136,7 +127,6 @@
 #include "run_time.h"
 #include "version.h"
 #include "polystring.h"
-#include "timing.h"
 #include "memmgr.h"
 
 
@@ -848,7 +838,7 @@ void ELFExport::exportStore(void)
     // Set the value to be the offset relative to the base of the area.  We have set a relocation
     // already which will add the base of the area.
     exports.rootFunction = USE_RELA ? 0 : (void*)rootOffset;
-    exports.timeStamp = getBuildTime();
+    exports.execIdentifier = exportModId;
     exports.architecture = machineDependent->MachineArchitecture();
     exports.rtsVersion = POLY_version_number;
 #ifdef POLYML32IN64
@@ -868,7 +858,17 @@ void ELFExport::exportStore(void)
     sections[sect_table_data].sh_size = sizeof(exportDescription) + memTableEntries*sizeof(memoryTableEntry);
 
     fwrite(&exports, sizeof(exports), 1, exportFile);
-    fwrite(memTable, sizeof(memoryTableEntry), memTableEntries, exportFile);
+
+    for (unsigned i = 0; i < memTableEntries; i++)
+    {
+        memoryTableEntry memt;
+        memset(&memt, 0, sizeof(memt));
+        memt.mtCurrentAddr = memTable[i].mtCurrentAddr;
+        memt.mtOriginalAddr = memTable[i].mtOriginalAddr;
+        memt.mtLength = memTable[i].mtLength;
+        memt.mtFlags = memTable[i].mtFlags;
+        fwrite(&memt, sizeof(memoryTableEntry), 1, exportFile);
+    }
 
     // The section name table
     sections[sect_sectionnametable].sh_offset = ftell(exportFile);

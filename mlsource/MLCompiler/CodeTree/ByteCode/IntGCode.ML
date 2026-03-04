@@ -43,8 +43,9 @@ struct
     open CodeCons
     open Address
     open BackendTree
-    open Misc
     open CodeArray
+
+    exception InternalError = Misc.InternalError
 
     val word0 = toMachineWord 0;
   
@@ -609,6 +610,8 @@ struct
                 
                 |   FreeCStack => genOpcode(opcode_freeCSpace, cvec)
 
+                |   GeneralEquality => raise InternalError "gencde: GeneralEquality"
+                    (* Should have been removed at a higher level. *)
                  ;
                 decsp() (* Removes one item from the stack. *)
             end

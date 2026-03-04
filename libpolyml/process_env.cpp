@@ -1,7 +1,7 @@
 /*
     Title:      Process environment.
 
-    Copyright (c) 2000-8, 2016-17, 2020
+    Copyright (c) 2000-8, 2016-17, 2020, 2025
 
         David C. J. Matthews
 
@@ -178,7 +178,7 @@ static Handle process_env_dispatch_c(TaskData *taskData, Handle args, Handle cod
     default:
         {
             char msg[100];
-            sprintf(msg, "Unknown environment function: %d", c);
+            snprintf(msg, sizeof(msg), "Unknown environment function: %d", c);
             raise_exception_string(taskData, EXC_Fail, msg);
             return 0;
         }
@@ -252,7 +252,7 @@ POLYUNSIGNED PolyProcessEnvErrorName(POLYUNSIGNED threadId, POLYUNSIGNED syserr)
         else
         { // If it isn't in the table.
             char buff[40];
-            sprintf(buff, "ERROR%0d", e);
+            snprintf(buff, sizeof(buff), "ERROR%0d", e);
             result = taskData->saveVec.push(C_string_to_Poly(taskData, buff));
         }
     }
@@ -531,7 +531,6 @@ POLYUNSIGNED PolyProcessEnvSystem(POLYUNSIGNED threadId, POLYUNSIGNED arg)
     try {
         TempString buff(pushedArg->Word());
         if (buff == 0) raise_syscall(taskData, "Insufficient memory", NOMEMORY);
-        int res = -1;
 #if (defined(_WIN32) && ! defined(__CYGWIN__))
         // Windows.
         TCHAR * argv[4];
@@ -606,9 +605,13 @@ POLYUNSIGNED PolyProcessEnvSystem(POLYUNSIGNED threadId, POLYUNSIGNED arg)
                     processes->ThreadPauseForIO(taskData, &waiter);
                 }
 #else
+                int res = -1;
                 int wRes = waitpid(pid, &res, WNOHANG);
                 if (wRes > 0)
+                {
+                    result = Make_fixed_precision(taskData, res);
                     break;
+                }
                 else if (wRes < 0)
                 {
                     raise_syscall(taskData, "Function system failed", errno);
@@ -631,7 +634,6 @@ POLYUNSIGNED PolyProcessEnvSystem(POLYUNSIGNED threadId, POLYUNSIGNED arg)
                 throw;
             }
         }
-        result = Make_fixed_precision(taskData, res);
 
     }
     catch (KillException&) {

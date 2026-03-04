@@ -1,5 +1,5 @@
 (*
-    Copyright (c) 2009-2015 David C.J. Matthews
+    Copyright (c) 2009-2015, 2025 David C.J. Matthews
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -60,6 +60,14 @@ struct
                   enterStruct: string * structVals  -> unit,
                   enterVal   : string * values      -> unit };
 
+    (* Helper function from STRUCT_VALS.  Should be replaced by patterns. *)
+    fun tcName       (TypeConstrs {name,...})       = name
+    fun tcIdentifier (TypeConstrs {identifier,...}) = identifier
+    fun tcLocations  (TypeConstrs {locations, ...}) = locations
+
+    fun tsConstr(TypeConstrSet(ts, _)) = ts
+    and tsConstructors(TypeConstrSet(_, tvs)) = tvs
+
     (* Type constructor cache.  This maps typeIDs in the copied signature to
        type constructors.  More importantly, it identifies a type constructor
        that carries that type ID so that when we copy the values the string
@@ -98,22 +106,29 @@ struct
                 fun makeName s = strName ^ s
                 fun copyId(TypeId{idKind=Bound{ offset, ...}, ...}) = SOME(mapTypeId offset)
                 |   copyId _ = NONE
+                fun makeTypeConstructor (name, uid, locations) =
+                    TypeConstrs
+                    {
+                        name       = name,
+                        identifier = uid,
+                        locations = locations
+                    }
             in
                 (* On the first pass we build datatypes, on the second type abbreviations
                    using the copied datatypes. *)
                 case tcIdentifier tcon of
-                    TypeId{idKind=TypeFn(args, equiv), access, description, ...} =>
+                    TypeId{idKind=TypeFn{arity, resType=equiv, ...}, access, description, ...} =>
                     if buildDatatypes then rest (* Not on this pass. *)
                     else (* Build a new entry whether the typeID has changed or not. *)
                     let
-                        val copiedEquiv =
-                            copyType(equiv, fn x => x,
+                        val (copiedEquiv, _) =
+                            copyType(equiv,
                                 fn tcon =>
-                                    copyTypeConstrWithCache(tcon, copyId, fn x => x, makeName, initialCache))
+                                    copyTypeConstrWithCache(tcon, copyId, makeName, initialCache))
                         val copiedId =
-                            TypeId{idKind=TypeFn(args, copiedEquiv), access=access, description=description}
+                            makeGeneralTypeFunction(arity, copiedEquiv, description, access)
                     in
-                        makeTypeConstructor(makeName(tcName tcon), args, copiedId, tcLocations tcon) :: rest
+                        makeTypeConstructor(makeName(tcName tcon), copiedId, tcLocations tcon) :: rest
                     end
 
                 |   id =>
@@ -122,9 +137,7 @@ struct
                     (
                         case copyId id of
                             NONE => rest (* Skip (or add to cache?) *)
-                        |   SOME newId =>
-                            makeTypeConstructor
-                                (makeName(tcName tcon), tcTypeVars tcon, newId, tcLocations tcon) :: rest
+                        |   SOME newId => makeTypeConstructor (makeName(tcName tcon), newId, tcLocations tcon) :: rest
                     )
             end
             else rest
@@ -144,16 +157,15 @@ struct
         val typeCache =
             buildTypeCache(sourceTab, strName, mapTypeId, false, (* Type abbreviations. *)datatypeCache, datatypeCache)
 
-        fun copyTypeCons (tcon : typeConstrs) : typeConstrs =
+        fun copyTypeCons tcon =
         let
             fun copyId(TypeId{idKind=Bound{ offset, ...}, ...}) = SOME(mapTypeId offset)
             |   copyId _ = NONE
         in
-            copyTypeConstrWithCache (tcon, copyId, fn x => x, fn s => strName ^ s, typeCache)
+            copyTypeConstrWithCache (tcon, copyId, fn s => strName ^ s, typeCache)
         end
 
-        fun copyTyp (t : types) : types =
-            copyType (t, fn x => x, (* Don't bother with type variables. *) copyTypeCons)
+        fun copyTyp t = #1(copyType (t, copyTypeCons))
  
     in
         univFold
@@ -197,21 +209,12 @@ struct
             then
             let
                 val TypeConstrSet(oldConstr, tcConstructors) = tagProject typeConstrVar dVal
-                val newConstr = copyTypeCons oldConstr;
+                val (newConstr, _) = copyTypeCons oldConstr
                 (* Copy the value constructors for a datatype. *)
        
-                fun copyValueConstr(
-                        v as Value{name, typeOf, class, access, locations, references, instanceTypes, ...}) =
-                let
-                    (* Copy its type and make a new constructor if the type has changed. *)
-                    val newType = copyTyp typeOf;
-                in
-                    if not (identical (newType, typeOf))
-                    then Value{name=name, typeOf=newType, class=class,
-                               access=access, locations = locations, references = references,
-                               instanceTypes=instanceTypes}
-                    else v
-                end;
+                fun copyValueConstr(Value{name, typeOf=ValueType(typeOf, templates), class, access, locations, references, ...}) =
+                    Value{name=name, typeOf=ValueType(copyTyp typeOf, templates), class=class,
+                               access=access, locations = locations, references = references }
 
                 val copiedConstrs = map copyValueConstr tcConstructors
             in
@@ -222,16 +225,13 @@ struct
             else if tagIs valueVar dVal
             then
             let
-                val v as Value {typeOf, class, name, access, locations, references, instanceTypes, ...} =
-                    tagProject valueVar dVal;
-                val newType = copyTyp typeOf;
+                val Value {typeOf=ValueType(typeOf, templates), class, name, access, locations, references, ...} =
+                    tagProject valueVar dVal
+                val newType = copyTyp typeOf
                 (* Can save creating a new object if the address and type
                    are the same as they were. *)
-                val res =
-                    if not (identical (newType, typeOf))
-                    then Value {typeOf=newType, class=class, name=name, instanceTypes=instanceTypes,
+                val res = Value {typeOf=ValueType(newType, templates), class=class, name=name,
                                     access=access,locations=locations, references = references}
-                    else v
             in
                 #enterVal resEnv (name, res)
             end 

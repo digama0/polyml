@@ -180,6 +180,7 @@
 	<source name="mlsource\MLCompiler\PARSE_DEC.ML" />
 	<source name="mlsource\MLCompiler\PARSE_TYPE.ML" />
 	<source name="mlsource\MLCompiler\ParseDec.ML" />
+	<source name="mlsource\MLCompiler\PARSEDECSIG.sml" />
 	<source name="mlsource\MLCompiler\ParseTree\BASE_PARSE_TREE.sml" />
 	<source name="mlsource\MLCompiler\ParseTree\BaseParseTreeSig.sml" />
 	<source name="mlsource\MLCompiler\ParseTree\CODEGEN_PARSETREE.sml" />
@@ -196,15 +197,14 @@
 	<source name="mlsource\MLCompiler\ParseTree\TypeCheckParsetreeSig.sml" />
 	<source name="mlsource\MLCompiler\PARSETREESIG.sml" />
 	<source name="mlsource\MLCompiler\ParseType.ML" />
+	<source name="mlsource\MLCompiler\PARSETYPESIG.sig" />
 	<source name="mlsource\MLCompiler\PRETTY.sig" />
 	<source name="mlsource\MLCompiler\Pretty.sml" />
-	<source name="mlsource\MLCompiler\PRINT_TABLE.ML" />
-	<source name="mlsource\MLCompiler\PrintTable.ML" />
-	<source name="mlsource\MLCompiler\PRINTTABLESIG.sml" />
 	<source name="mlsource\MLCompiler\SIGNATURES.sml" />
 	<source name="mlsource\MLCompiler\SIGNATURESSIG.sml" />
 	<source name="mlsource\MLCompiler\SignaturesStruct.sml" />
 	<source name="mlsource\MLCompiler\Skips.ML" />
+	<source name="mlsource\MLCompiler\SKIPS.sig" />
 	<source name="mlsource\MLCompiler\SKIPS_.ML" />
 	<source name="mlsource\MLCompiler\StretchArray.ML" />
 	<source name="mlsource\MLCompiler\StronglyConnected.sml" />

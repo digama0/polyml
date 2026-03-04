@@ -1,7 +1,7 @@
 /*
     Title:  rtsentry.cpp - Entry points to the run-time system
 
-    Copyright (c) 2016, 2017 David C. J. Matthews
+    Copyright (c) 2016, 2017, 2025 David C. J. Matthews
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -70,6 +70,7 @@
 #include "statistics.h"
 #include "savestate.h"
 #include "bytecode.h"
+#include "modules.h"
 
 extern struct _entrypts rtsCallEPT[];
 
@@ -98,6 +99,7 @@ static entrypts entryPointTable[] =
     savestateEPT,
     machineSpecificEPT,
     byteCodeEPT,
+    modulesEPT,
     NULL
 };
 

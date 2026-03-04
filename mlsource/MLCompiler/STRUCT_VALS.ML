@@ -2,7 +2,7 @@
     Copyright (c) 2000
         Cambridge University Technical Services Limited
 
-    Modified David C. J. Matthews 2009, 2012, 2015.
+    Modified David C. J. Matthews 2009, 2012, 2015, 2025.
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -23,20 +23,11 @@
     Author:     Dave Matthews,Cambridge University Computer Laboratory
     Copyright   Cambridge University 1985
 *)
-
-(* This type contains the basic structures of global and local declarations.
-   Putting the global declarations in a separate type allows us to install a new
-   compiler (particularly to fix bugs) and still be compatible with declarations
-   made with the old compiler. It is also convenient to put local values in
-   here as well.  *) 
   
 functor STRUCT_VALS (
 
 structure CODETREE : CODETREE where type machineWord = Address.machineWord
 
-(*****************************************************************************)
-(*                  UNIVERSALTABLE                                           *)
-(*****************************************************************************)
 structure UNIVERSALTABLE :
 sig
   type 'a tag = 'a Universal.tag;
@@ -56,13 +47,9 @@ end
 ) :> STRUCTVALSIG where type codetree = CODETREE.codetree and type univTable = UNIVERSALTABLE.univTable and type level = CODETREE.level
 =  
 
-(*****************************************************************************)
-(*                  STRUCTVALS functor body                                  *)
-(*****************************************************************************)
 struct
     open CODETREE;
   
-    open Misc;
     open Universal;
     open UNIVERSALTABLE;
   
@@ -110,14 +97,93 @@ struct
     datatype typeId =
         TypeId of { access: valAccess, description: typeIdDescription, idKind: typeIdKind }
 
+    (* A type constructor can be one of these kinds.
+       Free ids are used for datatypes in the core language,
+       Bound ids are used in signatures,
+       Type functions (type abbreviations) refer to other types.
+       To allow type functions to be unified without unrolling first we need to record which
+       type variables are actually used and how they are used for equality.  It is possible
+       that a type variable is never used (e.g. type 'a t = int) in which case "bool t" and
+       "string t" both unify and "(int->int) t" admits equality.  The typeFunCount records
+       the depth of the sequence of type functions e.g. type s(*1*) = int*int type t(*2*) = s
+       so when unifying "x:s" and "y:t" we unwrap "t" rather than "s". *)
     and typeIdKind =
         Free of { uid: uniqueId, allowUpdate: bool, arity: int  }
     |   Bound of { offset: int, eqType: bool possRef, isDatatype: bool, arity: int }
-    |   TypeFn of typeVarForm list * types
+    |   TypeFn of
+        {
+            arity:      int,
+            resType:    types,
+            usedTvs:    BoolVector.vector,
+            typeFunCount: int,
+            equality:   typeFnEq ref,
+            uid:        uniqueId
+        }
 
+    and typeFnEq = TypeFnEqNever | TypeFnEq of BoolVector.vector
+
+
+    (* Templates for type variables.  Normal type variables are TemplPlain.
+       equality means this is an equality type.  The compiler adds equality
+       functions to functions that contain an equality test and print functions to those that
+       use PolyML.print.
+       TemplFlexRec is used when a function contains flexible records that have not been
+       resolved when the function was generalised.
+       TemplOverload is used for the functions at the outer level that can be overloaded. *)
+    and typeVarTemplate =
+        TemplPlain of { equality: bool }
+    |   TemplFlexRec of
+        {
+            equality: bool,
+            recList: {typeOf: types, name: string} list,
+            fullList: {names: string list, frozen: bool} refChain ref
+        }
+    |   TemplOverload of string
+
+    (* Variables used in unification.  These are instantiated from generic type variables. *)
+    and typeVar =
+        TypeVariable of
+        {
+            link: instanceType option refChain ref,
+            equality: bool refChain ref,
+            level: tvLevel refChain ref
+        }
+
+    (* A type variable can be set to one of these. TVLUnset is the initial state.  TVLCoreType is used
+       when the type variable has been unified with a core type and includes the map for the bound type
+       variables. TVLLink is used when the type variable has been unified with another type variable.
+       TVLOverload is used when the type variable is set to an overload set. *)
+    and typeVarLink =
+        TVLUnset
+    |   TVLCoreType of { types: types, map: tvIndex -> typeVar }
+    |   TVLLink of typeVar
+    |   TVLOverload of typeConstrs list
+
+    (* Reference chain.  Any entry may be chained onto this. *)
+    and 'a refChain = ChainRef of 'a refChain ref | ChainEnd of 'a
+
+    (* Index for type variables.  This is simply to make the use clearer. *)
+    and tvIndex = TVIndex of int
+
+    (* Old type structure. *)
     (* A type is the union of these different cases. *)
     and types = 
-        TypeVar          of typeVarForm
+        TypeVar          of typeVar
+
+        (* Bound type variable. This is an index into a table or list of types.  The name is just for printing. *)
+    |   BoundTypeVar of string * tvIndex
+
+        (* Free type variable.  These are used where a type variable has been introduced explicitly.
+           Normally they are NonGeneric and  can only be generalised in a scope less than "level".
+           Generic is used when matching a signature and ensures that the value in the matching
+           structure is fully polymorphic. *)
+    |   FreeTypeVar of
+        {
+            name: string,
+            equality: bool,
+            level: tvLevel,
+            uid: uniqueId
+        }
 
     |   TypeConstruction of
         {
@@ -133,22 +199,38 @@ struct
             result: types
         }
 
-    |   LabelledType  of labelledRec
+        (* A normal tuple or labelled record.  Tuples are labelled records with fields #1, #2 etc. *)
+    |   LabelledRecord of {typeOf: types, name: string} list
 
-    |   OverloadSet   of
+        (* Flexible records i.e. derived from "{a, ...}". These can only occur with
+           local values since the record must be frozen at the top level.
+           The first is a variable, similar to TypeVar, that can be updated.
+           A flexible record consists of the list of fields with their types which can be
+           extended during unification.  The full list holds the field names.  Every
+           instance has the same list of names.  When "frozen" is true the list cannot be
+           extended. "properties" is used when new fields need to be added. *)
+    |   FlexibleRecordVar of
         {
-            typeset: typeConstrs list
+            recList: {typeOf: types, name: string} list refChain ref,
+            fullList: {names: string list, frozen: bool} refChain ref,
+            equality: bool refChain ref,
+            level: tvLevel refChain ref
         }
 
-    |   BadType
+        (* An overload set.  This is constructed from a TemplOverload template along with the current
+           set of overloads for the identifier.  e.g. for "+" that might be FixedInt.int, LargeInt.int,
+           Word.word etc.  As unification proceeds the set may reduce to a single type.
+           These are chained so that if two sets are unified they become linked and subsequent
+           use of either affects both. *)
+    |   OverloadSetVar of typeConstrs list refChain ref
 
-    |   EmptyType
+        (* For when there has been a type error or an undefined identifier *)
+    |   BadType
 
     and typeConstrs = 
         TypeConstrs of
         {
             name:       string,
-            typeVars:   typeVarForm list,
             identifier: typeId,
             locations:  locationProp list (* Location of declaration *)
         }
@@ -156,9 +238,10 @@ struct
     and typeConstrSet = (* A type constructor with its, possible, value constructors. *)
         TypeConstrSet of typeConstrs * values list
 
-    and labelFieldList =
-        FieldList of string list * bool (* True if this is frozen *)
-    |   FlexibleList of labelFieldList ref
+    (* Instance types.  A type plus a map for bound type variables. *)
+    and instanceType =
+        Instance of types * (tvIndex -> types option)
+    |   SimpleInstance of types
 
     (* Access to a value, structure or functor. *)
     and valAccess =
@@ -242,19 +325,23 @@ struct
         Value of
         {
             name: string,
-            typeOf: types,
+            typeOf: valueType,
             access: valAccess,
             class: valueClass,
             locations: locationProp list, (* Location of declaration *)
-            references: references,
-            instanceTypes: types list ref option (* Instance types for local variables. *)
+            references: references
         }
+
+    (* The "type" of a value.  In general this is polymorphic and when an instance is created assignable type
+       variables are made for each of the templates.  Bound variables in #typeof are mapped onto these. *)
+    and valueType = ValueType of types * typeVarTemplate list
+
 
     (* Classes of values. *)
     and valueClass =
         ValBound
     |   PattBound
-    |   Exception
+    |   Exception of { nullary: bool }
     |   Constructor of
         {
             nullary: bool, (* True if this is a single value (e.g. "nil") rather than a function. *)
@@ -266,26 +353,12 @@ struct
     |   OpenedAt of location
     |   StructureAt of location
     |   SequenceNo of FixedInt.int
-  
+
+    and tvLevel = Generalisable | NotGeneralisable of int
+
     withtype uniqueId = bool ref
         (* We use a ref here both because we can then set equality if we
            need but also because it allows us to create a unique Id. *)
-      
-    and typeVarForm = 
-    {
-        value:    types ref,
-        encoding: Word.word
-    }
-
-    and labelledRec =
-    {
-        (* Fields actually present in this record.  If this was flexible at some
-           stage there may be extra fields listed in the full field list. *)
-        recList: { name: string, typeof: types } list,
-        (* The names of all the fields including extra fields. *)
-        fullList: labelFieldList
-    }
-
     
   (* A set of type contructors.  This is used only during the
      compilation process and represents the set of possible types
@@ -304,6 +377,15 @@ struct
     {
         typeset: typeConstrs list
     }
+
+    (* Reference chains.  These are used when unification between two entries
+       makes a permanent link between all of them. *)
+    (* Return the last reference in a chain. *)
+    fun followRefChainToRef(v as ref(ChainEnd final)) = (v, final)
+    |   followRefChainToRef(ref(ChainRef c)) = followRefChainToRef c
+    
+    fun followRefChainToEnd(ChainRef(ref v)) = followRefChainToEnd v
+    |   followRefChainToEnd(ChainEnd e) = e
 
     (* Identifiers *)
     fun makeFreeId(arity, access, eq, desc) =
@@ -325,31 +407,27 @@ struct
         TypeId { access=access, description = desc,
             idKind = Bound{offset=n, eqType=VariableRef(ref eq), isDatatype = isdt, arity=arity}}
 
-    (* Type functions currently always have Free ids. *)
-    fun makeTypeFunction(desc, typeFn) =
-        TypeId { access=Global CodeZero, description = desc, idKind = TypeFn typeFn};
+    fun makeUniqueId() = ref false (* Just for type functions *)
             
     (* Find the number - assuming it is bound. *)
     fun offsetId (TypeId{idKind=Bound {offset, ...}, ...}) = offset
-    |   offsetId _       = raise InternalError "offsetId: not a Bound";
+    |   offsetId _       = raise Misc.InternalError "offsetId: not a Bound";
 
     (* Are two type constructors the same? *)
     fun sameTypeId (TypeId{idKind=Free{uid = a, ...}, ...}, TypeId{idKind=Free {uid = b, ...}, ...}) = a = b
     |   sameTypeId (TypeId{idKind=Bound{offset=a, ...}, ...}, TypeId{idKind=Bound{offset=b, ...}, ...}) = a = b
     |   sameTypeId _ = false (* Includes type functions. *)
 
-    fun idAccess (TypeId { access, ...}) = access
-
     fun isEquality (TypeId { idKind = Free{uid = ref eq, ...}, ...}) = eq
     |   isEquality (TypeId { idKind = Bound{eqType, ...}, ...}) = pling eqType
-    |   isEquality (TypeId { idKind = TypeFn _, ...}) = raise InternalError "isEquality: TypeFn"
+    |   isEquality (TypeId { idKind = TypeFn _, ...}) = raise Misc.InternalError "isEquality: TypeFn"
 
     (* Set the equality property.   Currently, free IDs are used for abstypes and
        datatypes that are local to a function as well as the usual case of using them
        for top-level types. *)
     fun setEquality(TypeId{idKind = Free{uid, allowUpdate=true, ...}, ...}, eq) = uid := eq
     |   setEquality(TypeId{idKind = Bound{eqType=VariableRef id, ...}, ...}, eq) = id := eq
-    |   setEquality _ = raise InternalError "setEquality: can't set equality attribute"
+    |   setEquality _ = raise Misc.InternalError "setEquality: can't set equality attribute"
 
     (* Signatures: Used for both signatures of local structures and for global structures 
        (name spaces). Strictly signatures do not contain fix-status functors
@@ -368,31 +446,6 @@ struct
     
   (* Types. *)
 
-  (* Level at which type is generalisable. *)
-
-  val generalisable = 9999; 
-    
-    
-  (* Destructors, constructors and predicates for types *)
-  val emptyType            = EmptyType;
-  val badType              = BadType;
-
-  fun isEmpty             EmptyType           = true | isEmpty            _ = false;
-  fun isBad               BadType             = true | isBad              _ = false;
-  
-  fun makeValueConstr (name, typeOf, nullary, constrs, access, locations) : values =
-    Value
-    { 
-      name    = name,
-      typeOf  = typeOf,
-      access  = access,
-      class   = Constructor { nullary = nullary, ofConstrs = constrs },
-      locations = locations,
-      references = NONE,
-      instanceTypes = NONE
-    };
-
-  
   (* A type variable is implemented as a true variable i.e. it can
      be assigned a particular type when it is unified. Initially it is
      set to EmptyType which represents an unset type variable.
@@ -405,50 +458,11 @@ struct
        fn a => let val x = a in x end      and
        fn a => let val x = hd a in x end
      The level is set to "generalisable" at the end of the block with that
-     level. Actually ``level'' is not actually changed - instead the type
-     variable is assigned to a new variable with the correct level, since
-     only the last variable in a sequence is looked at.
-     ``equality'' is true if this is an equality variable e.g. ''a.
-     ``nonunifiable'' is true for type variables introduced explicitly
-     or type variables in signatures. Such type variables can have their
-     level changed but cannot be unified with other types, with other
-     nonunifiable type variables or with equality variables (unless it
-     is already an equality variable). 
-     ``weak'' is true if this is an imperative type variable e.g. '_a *)
+     level.
+     ``equality'' is true if this is an equality variable e.g. ''a. *)
 
-    fun sameTv (a : typeVarForm, b : typeVarForm) : bool = 
-        #value a = #value b; (* If the same ref it must be the same *)
-        
-    local
-        open Word
-        infix 8 >> <<
-        infix 7 andb
-        infix 6 orb
-    in
-        fun makeTv {value : types, level, equality, nonunifiable, printable} : typeVarForm =
-            { value    = ref value, (* REF HOTSPOT - 400 *)
-              encoding = (fromInt level << 0w3)
-                           orb (if equality     then 0w4 else 0w0)
-                           orb (if nonunifiable then 0w2 else 0w0)
-                           orb (if printable    then 0w1 else 0w0)}
-        
-        fun tvSetValue ({ value, ...} : typeVarForm, t : types) = value := t
-        fun tvValue ({value = ref v, ...} : typeVarForm) : types = v
-        fun tvLevel ({encoding, ...} : typeVarForm) : int  = Word.toInt(encoding >> 0w3)
-        fun tvEquality ({encoding, ...} : typeVarForm)     = encoding andb 0w4 <> 0w0
-        fun tvNonUnifiable ({encoding, ...} : typeVarForm) = encoding andb 0w2 <> 0w0
-        fun tvPrintity ({encoding, ...} : typeVarForm)     = encoding andb 0w1 <> 0w0
-    end
-
-    local
-        fun follow (FlexibleList(ref r)) = follow r
-        |   follow (FieldList c) = c
-    in
-        fun recordIsFrozen { fullList, ...} =
-            #2 (follow fullList)
-        and recordFields {fullList, ...} =
-            #1 (follow fullList)
-    end
+    fun makeTv {value, level, equality } =
+        TypeVariable{ link = ref (ChainEnd value), level= ref (ChainEnd level), equality = ref (ChainEnd equality) }
 
   (* Type constructors are identifiers which take zero or more types and yield a
      type as result. Their main property is that two type constructors can be 
@@ -456,39 +470,6 @@ struct
      constructors is for aliasing types. In this case "typeVars" points to a list 
      of type variables which are used in the "equivalent" type. ``equality'' is a 
      flag indicating if the values can be tested for equality. *)
-      
-    fun tcName       (TypeConstrs {name,...})       = name
-    fun tcTypeVars   (TypeConstrs {typeVars,...})   = typeVars
-    fun tcIdentifier (TypeConstrs {identifier,...}) = identifier
-    fun tcLocations  (TypeConstrs {locations, ...}) = locations
-
-    (* Is this a type function?  N.B. It is possible, though unlikely, that it
-       is a datatype as well i.e. has value constructors. *)
-    fun tcIsAbbreviation (TypeConstrs {identifier = TypeId{idKind = TypeFn _, ...},...}) = true
-    |   tcIsAbbreviation _ = false
-
-    fun tcArity(TypeConstrs {identifier=TypeId{idKind=TypeFn(args, _),...}, ...}) = length args
-    |   tcArity(TypeConstrs {identifier=TypeId{idKind=Bound{arity, ...},...}, ...}) = arity
-    |   tcArity(TypeConstrs {identifier=TypeId{idKind=Free{arity, ...},...}, ...}) = arity
-
-    (* Equality and "equivalence" are now properties of the type id.  Retain these functions for the moment. *)
-
-    val tcEquality = isEquality o tcIdentifier;
-    fun tcSetEquality(tc, eq) = setEquality(tcIdentifier tc, eq)
-
-    (* Construct a type constructor.  We need typeVars here purely to be
-       able to print datatypes with equality type variables e.g. datatype ''a t. *)
-    fun makeTypeConstructor (name, typeVars, uid, locations) =
-        TypeConstrs
-        {
-            name       = name,
-            typeVars   = typeVars,
-            identifier = uid,
-            locations = locations
-        }
-
-    fun tsConstr(TypeConstrSet(ts, _)) = ts
-    and tsConstructors(TypeConstrSet(_, tvs)) = tvs
 
     val inBasis =
         { file = "Standard Basis", startLine = 0, startPosition = 0, endLine = 0, endPosition = 0}
@@ -502,12 +483,6 @@ struct
     |   Nonfix
 
     datatype fixStatus = FixStatus of string * infixity
-
-    fun vaGlobal   (Global   x) = x | vaGlobal   _ = raise Match
-    fun vaLocal    (Local    x) = x | vaLocal    _ = raise Match
-
-    val makeGlobal = Global;
-    val makeFormal = Formal;
   
     fun makeLocal () = Local { addr = ref ~1 (* Invalid addr - catch errors *), level = ref baseLevel }
        
@@ -518,7 +493,7 @@ struct
     
     (* Global structure *)
     fun makeGlobalStruct (name, signat, code, locations) =
-        makeStruct (name, signat, makeGlobal code, locations)
+        makeStruct (name, signat, Global code, locations)
 
     (* These are used in INITIALISE so must be mutable. *)
     fun makeEmptyGlobal name =
@@ -529,7 +504,7 @@ struct
                    firstBoundIndex   = 0, 
                    boundIds   = [],
                    locations =  [DeclaredAt inBasis] },
-            makeGlobal CodeZero, [DeclaredAt inBasis])
+            Global CodeZero, [DeclaredAt inBasis])
      
     (* Local structure. *)
     fun makeLocalStruct (name, signat, location) = 
@@ -545,29 +520,14 @@ struct
       | _          => selected
   
     fun makeFormalStruct (name, signat, addr, location) =
-      makeStruct (name, signat, makeFormal addr, location);
+      makeStruct (name, signat, Formal addr, location);
      
-    (* Values. *)  
-    fun makeOverloaded (name, typeOf, operation) : values =
-    Value{ name = name, typeOf = typeOf, access = Overloaded operation, class = ValBound,
-           locations = [DeclaredAt inBasis], references = NONE, instanceTypes = NONE};
-
+    (* Values. *)
     val undefinedValue    =
-    Value{ name = "<undefined>", typeOf = BadType, access = Global CodeZero, class = ValBound,
-           locations = [DeclaredAt inBasis], references = NONE, instanceTypes = NONE };
+    Value{ name = "<undefined>", typeOf = ValueType(BadType, []), access = Global CodeZero, class = ValBound,
+           locations = [DeclaredAt inBasis], references = NONE }
 
     fun isUndefinedValue(Value{name = "<undefined>", ...}) = true | isUndefinedValue _ = false
-
-    fun valName (Value{name, ...}) = name
-    fun valTypeOf (Value{typeOf, ...}) = typeOf
-
-    fun isConstructor (Value{class=Constructor _, ...}) = true
-    | isConstructor (Value{class=Exception, ...})     = true
-    | isConstructor _                                  = false;
-
-    fun isValueConstructor (Value{class=Constructor _, ...}) = true
-    | isValueConstructor _                                 = false;
-
 
     (* Functor value. *)
     fun makeFunctor (name, arg, result, access, locations) = 
@@ -607,24 +567,27 @@ struct
         enterStruct:  string * structVals  -> unit,
         enterSig:     string * signatures  -> unit,
         enterFunct:   string * functors    -> unit,
-        allValNames:  unit -> string list
+        allValNames:  unit -> string list,
+        allStructNames: unit -> string list
     }
 
     (* This creates functions for entering and looking up names. *)
     fun makeEnv tab =
-        Env { lookupVal    = makeLook  valueVar      tab,
-          lookupType   = makeLook  typeConstrVar tab,
-          lookupFix    = makeLook  fixVar        tab,
-          lookupStruct = makeLook  structVar     tab,
-          lookupSig    = makeLook  signatureVar  tab,
-          lookupFunct  = makeLook  functorVar    tab,
-          enterVal     = makeEnter valueVar      tab,
-          enterType    = makeEnter typeConstrVar tab,
-          enterFix     = makeEnter fixVar        tab,
-          enterStruct  = makeEnter structVar     tab,
-          enterSig     = makeEnter signatureVar  tab,
-          enterFunct   = makeEnter functorVar    tab,
-          allValNames  = makeAllNames valueVar   tab
+        Env {
+            lookupVal      = makeLook  valueVar      tab,
+            lookupType     = makeLook  typeConstrVar tab,
+            lookupFix      = makeLook  fixVar        tab,
+            lookupStruct   = makeLook  structVar     tab,
+            lookupSig      = makeLook  signatureVar  tab,
+            lookupFunct    = makeLook  functorVar    tab,
+            enterVal       = makeEnter valueVar      tab,
+            enterType      = makeEnter typeConstrVar tab,
+            enterFix       = makeEnter fixVar        tab,
+            enterStruct    = makeEnter structVar     tab,
+            enterSig       = makeEnter signatureVar  tab,
+            enterFunct     = makeEnter functorVar    tab,
+            allValNames    = makeAllNames valueVar   tab,
+            allStructNames = makeAllNames structVar  tab
         }
 
     structure Sharing =
@@ -644,7 +607,14 @@ struct
         and  infixity   = infixity
         and  functors   = functors
         and  locationProp = locationProp
-        and  typeVarForm = typeVarForm
         and  level      = level
+        and  tvLevel    = tvLevel
+        and  typeFnEq   = typeFnEq
+        and  typeVarTemplate = typeVarTemplate
+        and  typeVar    = typeVar
+        and  typeVarLink = typeVarLink
+        and  tvIndex    = tvIndex
+        and  valueType  = valueType
+        and  instanceType = instanceType
     end
-end (* STRUCTVALS *);
+end;

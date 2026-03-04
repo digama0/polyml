@@ -40,25 +40,14 @@ sig
 end;
 
 structure LEX : LEXSIG
-
 structure CODETREE : CODETREE
 structure STRUCTVALS : STRUCTVALSIG; 
 structure VALUEOPS : VALUEOPSSIG;
 structure EXPORTTREE: EXPORTTREESIG
 structure STRUCTURES : STRUCTURESSIG
-
-structure PARSEDEC :
-sig
-  type lexan
-  type symset
-  type fixStatus
-  type program
-  
-  val parseDec: symset * lexan *
-    { enterFix:  string * fixStatus -> unit, lookupFix: string -> fixStatus option } -> program
-end;
-
+structure PARSEDEC : PARSEDECSIG
 structure DEBUG: DEBUG
+structure SYMBOLS: SymbolsSig
 
 structure UTILITIES :
 sig
@@ -70,15 +59,8 @@ end;
 
 structure PRETTY : PRETTY
 
-structure MISC :
-sig
-  exception InternalError of string
-  val lookupDefault : ('a -> 'b option) -> ('a -> 'b option) -> 'a -> 'b option
-  val quickSort : ('a -> 'a -> bool) -> 'a list -> 'a list
-end;
-
 sharing STRUCTVALS.Sharing = VALUEOPS.Sharing = PRETTY.Sharing = STRUCTURES.Sharing
-      = LEX.Sharing = EXPORTTREE.Sharing = SYMSET = PARSEDEC = CODETREE
+      = LEX.Sharing = EXPORTTREE.Sharing = SYMSET = PARSEDEC = CODETREE = SYMBOLS.Sharing
 
  ) : COMPILERBODYSIG
 
@@ -88,13 +70,10 @@ sharing STRUCTVALS.Sharing = VALUEOPS.Sharing = PRETTY.Sharing = STRUCTURES.Shar
 (*                  COMPILERBODY functor body                                *)
 (*****************************************************************************)
 struct
-    open MISC;
     open STRUCTVALS;
-    open PRETTY;
-    open LEX;
 
-    open STRUCTURES
-    open EXPORTTREE
+    type exportTree = EXPORTTREE.exportTree
+    type ptProperties = EXPORTTREE.ptProperties
 
     type nameSpace =
       { 
@@ -120,16 +99,13 @@ struct
         allFunct:     unit -> (string*functors) list
       }
 
-    val stopSyms = let open SYMSET in op ++ (abortParse, semicolon) end
-
-    fun baseCompiler (lex : lexan, nameSpace: nameSpace, debugSwitches) :
+    fun baseCompiler (lex : LEX.lexan, nameSpace : nameSpace, debugSwitches : Universal.universal list) :
        exportTree option * (unit ->
            { fixes: (string * fixStatus) list, values: (string * values) list,
              structures: (string * structVals) list, signatures: (string * signatures) list,
              functors: (string * functors) list, types: (string * typeConstrSet) list }) option =
     let (* let1 *)
-
-        val compilerOutput = getCompilerOutput debugSwitches
+        val compilerOutput = PRETTY.getCompilerOutput debugSwitches
         val printParsetree = DEBUG.getParameter DEBUG.parsetreeTag debugSwitches
 
         val globals =
@@ -146,46 +122,55 @@ struct
             enterStruct  = #enterStruct nameSpace,
             enterSig     = #enterSig nameSpace,
             enterFunct   = #enterFunct nameSpace,
-            allValNames  = fn () => map #1 (#allVal nameSpace ())
+            allValNames  = fn () => map #1 (#allVal nameSpace ()),
+            allStructNames = fn () => map #1 (#allStruct nameSpace ())
         }
 
-        val startLocn = location lex
+        val startLocn = LEX.location lex
 
         val () =
-            if SYMSET.inside (sy lex, SYMSET.semicolon)
-            then insymbol lex
-            else ()
+            case LEX.sy lex of
+                SYMBOLS.Semicolon => LEX.insymbol lex
+            |   _ => ()
       
         val parentTreeNav =
-            case List.find (Universal.tagIs rootTreeTag) debugSwitches of
-                SOME opt => Universal.tagProject rootTreeTag opt
+            case List.find (Universal.tagIs EXPORTTREE.rootTreeTag) debugSwitches of
+                SOME opt => Universal.tagProject EXPORTTREE.rootTreeTag opt
             |   NONE => { parent = NONE, next = NONE, previous = NONE }
-
     in
         (* An empty declaration (or end of file!) *)
-        if SYMSET.inside (sy lex, stopSyms)
-        then if errorOccurred lex (* We could have, for example, an unterminated comment. *)
-        then (NONE, NONE)
-        else (SOME(locSpan(startLocn, location lex), []), 
-                 SOME (fn () => { fixes=[], values=[], structures=[], functors=[], types=[], signatures=[] })
-            ) (* Do nothing *)
+        if (case LEX.sy lex of SYMBOLS.AbortParse => true | SYMBOLS.Semicolon => true | _ => false)
+        then
+            if LEX.errorOccurred lex (* We could have, for example, an unterminated comment. *) then
+                (NONE, NONE)
+            else
+                (* Do nothing *)
+                (SOME (LEX.locSpan (startLocn, LEX.location lex), []),
+                 SOME (fn () => {fixes=[], values=[], structures=[], functors=[], types=[], signatures=[]}))
         else
         let
-            (* create a "throw away" compiling environment for this topdec *)
-            val newFixEnv = UTILITIES.searchList ()
-            val enterFix  = #enter newFixEnv
-            val lookupFix = lookupDefault (#lookup newFixEnv) (#lookupFix globals)
-   
             (* parse a program: a sequence of topdecs ending with a semicolon. *)
             val parseTree : STRUCTURES.program = 
-                PARSEDEC.parseDec (stopSyms, lex, {enterFix  = enterFix, lookupFix = lookupFix})
+                let
+                    (* create a "throw away" compiling environment for this topdec *)
+                    val newFixEnv = UTILITIES.searchList ()
+                    val fixes : PARSEDEC.fixes =
+                        {enterFix = #enter newFixEnv,
+                         lookupFix = Misc.lookupDefault (#lookup newFixEnv) (#lookupFix globals)}
+                    and params : PARSEDEC.params =
+                        {recordPunning = DEBUG.getParameter DEBUG.languageExtensionsTag debugSwitches}
+
+                    val stopSyms = let open SYMSET in op ++ (abortParse, semicolon) end
+                in
+                    PARSEDEC.parseDec (stopSyms, lex, fixes, params)
+                end
 
             val () = 
                 if printParsetree
                 then compilerOutput (STRUCTURES.displayProgram (parseTree, 10000))
                 else ()
         in
-            if errorOccurred lex
+            if LEX.errorOccurred lex
             then (NONE, NONE) (* Error: No result and the parse tree won't be useful. *)
             else
             let
@@ -194,16 +179,16 @@ struct
                 val () = STRUCTURES.pass2Structs (parseTree, lex, Env globals)
           
             in
-                if errorOccurred lex
-                then (SOME(structsExportTree(parentTreeNav, parseTree)), NONE)
+                if LEX.errorOccurred lex
+                then (SOME (STRUCTURES.structsExportTree (parentTreeNav, parseTree)), NONE)
                 else
                 let
                     (* Only code-generate if there were no errors and it's not a directive. *)
                     val (structCode, nLocals) = STRUCTURES.gencodeStructs (parseTree, lex)
                 in
-                    if errorOccurred lex
+                    if LEX.errorOccurred lex
                     then (* Errors can be produced during the code-generation phase. *)
-                        (SOME(structsExportTree(parentTreeNav, parseTree)), NONE) (* Error: No result. *)
+                        (SOME (STRUCTURES.structsExportTree (parentTreeNav, parseTree)), NONE) (* Error: No result. *)
                     else
                     let                      
                         val resultCode = CODETREE.genCode(structCode, debugSwitches, nLocals)
@@ -211,7 +196,7 @@ struct
                            the compilation. *)
                         fun executeCode() = STRUCTURES.pass4Structs (resultCode (), parseTree)
                     in
-                        (SOME(structsExportTree (parentTreeNav, parseTree)), SOME executeCode)
+                        (SOME (STRUCTURES.structsExportTree (parentTreeNav, parseTree)), SOME executeCode)
                     end
                 end
             end
@@ -226,18 +211,18 @@ struct
     let
         val debugSwitches = parameters 
         val lex = LEX.initial(getChar, debugSwitches)
-        val compilerOutput = getCompilerOutput parameters
-        fun printReport s = compilerOutput(PrettyString s)
+        val compilerOutput = PRETTY.getCompilerOutput parameters
+        fun printReport s = compilerOutput(PRETTY.PrettyString s)
     in
         baseCompiler(lex, nameSpace, debugSwitches)
       handle
-        SML90.Interrupt =>
+        Thread.Thread.Interrupt =>
         (
             printReport "Compilation interrupted\n";
-            raise SML90.Interrupt
+            raise Thread.Thread.Interrupt
         )
          
-      | InternalError s =>
+      | Misc.InternalError s =>
         let
             val s' =
                 "Exception- InternalError: " ^ String.toString s ^ " raised while compiling"

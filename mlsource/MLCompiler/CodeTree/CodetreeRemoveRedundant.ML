@@ -1,5 +1,5 @@
 (*
-    Copyright (c) 2012,13, 17, 20-1 David C.J. Matthews
+    Copyright (c) 2012,13, 17, 20-1, 2025 David C.J. Matthews
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -40,9 +40,32 @@ struct
        bindings in case they are required.  That was originally its only function; hence the name. *)
     fun cleanProc (pt, procUses: codeUse list, prev: int * codeUse list -> loadForm, recursiveRef: codeUse list -> unit, localCount, checkArg) =
     let
+        (* Filter the use information so there is only a single instance of each kind of
+           usage.  The usage lists can blow up.  See #197. *)
+        fun addUsesToArray useArray addr uses =
+        let
+            fun match(UseGeneral, UseGeneral) = true
+            |   match(UseExport, UseExport) = true
+            |   match(UseField(i1, l1), UseField(i2, l2)) = i1 = i2 andalso matchList (l1, l2)
+            |   match _ = false
+            and matchList([], []) = true
+            |   matchList(h1::t1, h2::t2) = match(h1, h2) andalso matchList(t1, t2)
+            |   matchList _ = false
+
+            fun addUse newUse =
+            let
+                val currentUsage = Array.sub(useArray, addr)
+            in
+                if List.exists(fn u => match(u, newUse)) currentUsage
+                then ()
+                else Array.update(useArray, addr, newUse :: currentUsage)
+            end
+        in
+            List.app addUse uses
+        end
+        
         val locals = Array.array(localCount, [])
-        fun addLocalUse addr use =
-            Array.update(locals, addr, use @ Array.sub(locals, addr))
+        val addLocalUse: int -> codeUse list -> unit = addUsesToArray locals
 
         fun cleanLambda(lambda as {body, isInline, name, argTypes, resultType, localCount, closure, ...}: lambdaForm,
                         lambdaUse) =
@@ -256,12 +279,17 @@ struct
                 (* Reference to a binding. *)
             |   doClean codeUse (Extract ext) = SOME(Extract(cleanExtract(ext, codeUse)))
 
-                (* Select a field from a tuple.  We can't do this for selection from datatypes because
+                (* Select a field from a tuple or container.  We can't do this for selection from datatypes because
                    some fields may not be present on all paths. *)
-            |   doClean codeUse (Indirect{base, offset, indKind = IndTuple}) =
+            |   doClean codeUse (Indirect{base, offset, indKind}) =
+                let
                     (* Try to pass down the use.  If the "base" is an Extract or another Indirect
                        we may be able to record this information.  If it is something else we can't. *)
-                    SOME(Indirect{base=cleanCode(base, [UseField(offset, codeUse)]), offset=offset, indKind = IndTuple})
+                in
+                    case indKind of
+                         IndVariant => NONE
+                    |    _ => SOME(Indirect{base=cleanCode(base, [UseField(offset, codeUse)]), offset=offset, indKind = indKind})
+                end
 
             |   doClean codeUse (Tuple{ fields, isVariant = false}) =
                 let
@@ -312,18 +340,14 @@ struct
                     (* Remove unused arguments.  They're unnecessary and may cause problems
                        later on. *)
                     fun filterUnused [] = ([], [])
-                    |   filterUnused (({use=[], value, ...}, _) :: args) =
-                        let
-                            val (used, discards) = filterUnused args
-                            (* We only need to keep this if it might have a side-effect. *)
-                        in
-                           (used, NullBinding(cleanCode(value, [UseGeneral])) :: discards)
-                        end
-                    |   filterUnused(({value, addr, use}, t) :: args) =
+                    |   filterUnused(({value, addr, ...}, t) :: args) =
                         let
                             val (used, discards) = filterUnused args
                         in
-                            (({value=cleanCode(value, use), addr=addr, use=use}, t) :: used, discards)
+                            case Array.sub(locals, addr) of
+                                [] => (* We only need to keep this if it might have a side-effect. *)
+                                    (used, NullBinding(cleanCode(value, [UseGeneral])) :: discards)
+                            |   use => (({value=cleanCode(value, use), addr=addr, use=use}, t) :: used, discards)
                         end
                     val (usedArgs, discards) = filterUnused arguments
                 in
@@ -331,19 +355,15 @@ struct
                     then
                     let
                         fun splitArgs([], []) = ([], [])
-                        |   splitArgs((arg, _) :: args, ({use=[], ...}, _) :: arguments) =
+                        |   splitArgs((arg as (argVal, _)) :: args, ({addr, ...}, _) :: arguments) =
                             let
                                 val (useArgs, discards) = splitArgs(args, arguments)
                             in
                                 (* We actually only need to keep this argument if it might have
                                    a side-effect but keep it anyway. *)
-                                (useArgs, NullBinding arg :: discards)
-                            end
-                        |   splitArgs(arg :: args, _ :: arguments) =
-                            let
-                                val (useArgs, discards) = splitArgs(args, arguments)
-                            in
-                                (arg :: useArgs, discards)
+                                case Array.sub(locals, addr) of
+                                    [] => (useArgs, NullBinding argVal :: discards)
+                                |   _ => (arg :: useArgs, discards)
                             end
                         |   splitArgs _ = raise InternalError "splitArgs"
 

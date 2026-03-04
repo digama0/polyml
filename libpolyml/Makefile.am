@@ -8,7 +8,7 @@ AM_ASFLAGS = $(OSFLAG)
 AM_CCASFLAGS = $(OSFLAG)
 
 lib_LTLIBRARIES = libpolyml.la
-libpolyml_la_LDFLAGS = -version-info 15:0:0
+libpolyml_la_LDFLAGS = -version-info 16:0:0
 
 if NO_UNDEFINED
 # Force all references to be defined to build the DLL.
@@ -71,6 +71,7 @@ noinst_HEADERS = \
 	machine_dep.h \
 	machoexport.h \
 	memmgr.h \
+    modules.h \
 	mpoly.h \
 	network.h \
 	noreturn.h \
@@ -124,6 +125,7 @@ libpolyml_la_SOURCES = \
     heapsizing.cpp \
     locking.cpp \
     memmgr.cpp \
+    modules.cpp \
     mpoly.cpp \
     network.cpp \
     objsize.cpp \
