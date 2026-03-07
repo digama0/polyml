@@ -150,27 +150,29 @@ struct ProcessExportAddresses
                 continue;
             }
 
+            POLYUNSIGNED lengthWord = obj->LengthWord();
+            ASSERT (OBJ_IS_LENGTH(lengthWord));
+
+            bool isCodeOrClosure = OBJ_IS_CODE_OBJECT(lengthWord) || OBJ_IS_CLOSURE_OBJECT(lengthWord);
+            if (isCodeOrClosure) {
+                // Mask out the original length and set it to 0, but keep the original flags
+                lengthWord &= _OBJ_PRIVATE_FLAGS_MASK;
+            }
+
+            WriteWord(lengthWord);
+
             curr += 1 << POLY_TAGSHIFT;
             m_index[w] = curr;
 
-            POLYUNSIGNED lengthWord = obj->LengthWord();
-            ASSERT (OBJ_IS_LENGTH(lengthWord));
-            WriteWord(lengthWord);
+            if (isCodeOrClosure) {
+                // raise_exception_string(taskData, EXC_Fail, "can't export code objects");
+                continue;
+            }
 
             size_t length = OBJ_OBJECT_LENGTH(lengthWord);
             if (OBJ_IS_BYTE_OBJECT(lengthWord)) {
                 byte *ptr = obj->AsBytePtr();
                 m_buff.insert(m_buff.end(), ptr, ptr + length * sizeof(PolyWord));
-                continue;
-            }
-
-            if (OBJ_IS_CODE_OBJECT(lengthWord)) {
-                // raise_exception_string(taskData, EXC_Fail, "can't export code objects");
-                continue;
-            }
-
-            if (OBJ_IS_CLOSURE_OBJECT(lengthWord)) {
-                // raise_exception_string(taskData, EXC_Fail, "can't export closures");
                 continue;
             }
 
@@ -195,7 +197,7 @@ struct ProcessExportAddresses
             PolyWord *end = obj->AsWordPtr() + OBJ_OBJECT_LENGTH(lengthWord);
             for (PolyWord *pt = obj->AsWordPtr(); pt < end; pt++) {
                 PolyWord val = *pt;
-                if (IS_INT(val) || val == PolyWord::FromUnsigned(0)) 
+                if (IS_INT(val) || val == PolyWord::FromUnsigned(0))
                     continue;
                 OverwriteWord((byte*)pt, m_index[val.AsUnsigned()]);
             }
