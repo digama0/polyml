@@ -66,11 +66,7 @@ struct ProcessExportAddresses
     void WriteWord(POLYUNSIGNED n) {
         auto i = m_buff.size();
         m_buff.resize(i + SIZEOF_POLYWORD);
-        OverwriteWord(&m_buff[i], n);
-    }
-
-    // Encode `n` to the buffer as 4 or 8 byte little endian.
-    void OverwriteWord(byte *buf, POLYUNSIGNED n) {
+        byte *buf = &m_buff[i];
         buf[0] = (byte)(n & 0xFF);
         buf[1] = (byte)((n >> 8) & 0xFF);
         buf[2] = (byte)((n >> 16) & 0xFF);
@@ -90,7 +86,7 @@ struct ProcessExportAddresses
         if (it == m_index.end())
             m_stack.push_back(w.AsUnsigned());
         else if (it->second == UNASSIGNED)
-            m_stack.push_back(w.AsUnsigned() | 1); // cycle!
+            raise_exception_string(taskData, EXC_Fail, "cycle detected in exportSmall");
     }
 
     void ScanAddressesInObjectDirect(PolyObject *obj) {
@@ -130,12 +126,9 @@ struct ProcessExportAddresses
 
         m_stack.push_back(root);
 
-        std::vector<size_t> cycles;
         POLYUNSIGNED curr = 0;
         while (!m_stack.empty()) {
             POLYUNSIGNED w = m_stack.back();
-            bool cycle = (w & 1) != 0;
-            w &= ~1;
             PolyObject *obj = PolyWord::FromUnsigned(w).AsObjPtr();
             auto it = m_index.find(w);
             if (it != m_index.end() && it->second != UNASSIGNED) {
@@ -176,9 +169,6 @@ struct ProcessExportAddresses
                 continue;
             }
 
-            if (cycle && length != 0)
-                cycles.push_back(m_stack.size());
-
             PolyWord *end = obj->AsWordPtr() + length;
             for (PolyWord *pt = obj->AsWordPtr(); pt < end; pt++) {
                 PolyWord val = *pt;
@@ -187,19 +177,7 @@ struct ProcessExportAddresses
                     continue;
                 }
                 ASSERT(val.IsDataPtr());
-                WriteWord(cycle ? val.AsUnsigned() : m_index[val.AsUnsigned()]);
-            }
-        }
-
-        for (size_t i : cycles) {
-            PolyObject *obj = (PolyObject*)&m_buff[i];
-            POLYUNSIGNED lengthWord = obj->LengthWord();
-            PolyWord *end = obj->AsWordPtr() + OBJ_OBJECT_LENGTH(lengthWord);
-            for (PolyWord *pt = obj->AsWordPtr(); pt < end; pt++) {
-                PolyWord val = *pt;
-                if (IS_INT(val) || val == PolyWord::FromUnsigned(0))
-                    continue;
-                OverwriteWord((byte*)pt, m_index[val.AsUnsigned()]);
+                WriteWord(m_index[val.AsUnsigned()]);
             }
         }
 
