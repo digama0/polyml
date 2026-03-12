@@ -54,6 +54,7 @@ in
             val callExport: string * (unit->unit) -> unit = RunCall.rtsCallFull2 "PolyExport"
             and callExportP: string * (unit->unit) -> unit = RunCall.rtsCallFull2 "PolyExportPortable"
             and callSmallExport: word -> Word8Vector.vector = RunCall.rtsCallFull1 "PolySmallExport"
+            and callSmallExportToFD: int * word -> unit = RunCall.rtsCallFull2 "PolySmallExportToFD"
         in
             (* The equivalent of atExit except that functions are added to
                the list persistently and of course the functions are executed
@@ -68,6 +69,7 @@ in
             fun export(filename, f) = callExport(filename, runFunction f)
             and exportPortable(filename, f) = callExportP(filename, runFunction f)
             and exportSmall(root: 'a): Word8Vector.vector = callSmallExport(RunCall.unsafeCast root)
+            and exportSmallToFD(fd: int, root: 'a): unit = callSmallExportToFD(fd, RunCall.unsafeCast root)
         end
         
         local

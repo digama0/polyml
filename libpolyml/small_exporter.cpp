@@ -36,6 +36,8 @@
 
 #include <vector>
 #include <unordered_map>
+#include <algorithm>
+#include <cstring>
 
 #include "polystring.h"
 #include "scanaddrs.h"
@@ -50,36 +52,95 @@
 #define NOMEMORY ERROR_NOT_ENOUGH_MEMORY
 #define ERRORNUMBER _doserrno
 #else
+#include <unistd.h>
 #define NOMEMORY ENOMEM
 #define ERRORNUMBER errno
 #endif
 
 extern "C" {
     POLYEXTERNALSYMBOL POLYUNSIGNED PolySmallExport(POLYUNSIGNED threadId, POLYUNSIGNED root);
+    POLYEXTERNALSYMBOL POLYUNSIGNED PolySmallExportToFD(POLYUNSIGNED threadId, POLYUNSIGNED fd, POLYUNSIGNED root);
 }
 
 #define UNASSIGNED (POLYUNSIGNED)-(1 << POLY_TAGSHIFT)
 
-struct ProcessExportAddresses
+static void EncodeWord(byte *buf, POLYUNSIGNED n) {
+    buf[0] = (byte)(n & 0xFF);
+    buf[1] = (byte)((n >> 8) & 0xFF);
+    buf[2] = (byte)((n >> 16) & 0xFF);
+    buf[3] = (byte)((n >> 24) & 0xFF);
+#if (SIZEOF_POLYWORD == 8)
+    buf[4] = (byte)((n >> 32) & 0xFF);
+    buf[5] = (byte)((n >> 40) & 0xFF);
+    buf[6] = (byte)((n >> 48) & 0xFF);
+    buf[7] = (byte)((n >> 56) & 0xFF);
+#else
+    ASSERT(SIZEOF_POLYWORD == 4);
+#endif
+}
+
+struct VectorWriter
 {
-    // Encode `n` to the buffer as 4 or 8 byte little endian.
+    std::vector<byte> m_buff;
+
     void WriteWord(POLYUNSIGNED n) {
         auto i = m_buff.size();
         m_buff.resize(i + SIZEOF_POLYWORD);
-        byte *buf = &m_buff[i];
-        buf[0] = (byte)(n & 0xFF);
-        buf[1] = (byte)((n >> 8) & 0xFF);
-        buf[2] = (byte)((n >> 16) & 0xFF);
-        buf[3] = (byte)((n >> 24) & 0xFF);
-#if (SIZEOF_POLYWORD == 8)
-        buf[4] = (byte)((n >> 32) & 0xFF);
-        buf[5] = (byte)((n >> 40) & 0xFF);
-        buf[6] = (byte)((n >> 48) & 0xFF);
-        buf[7] = (byte)((n >> 56) & 0xFF);
-#else
-        ASSERT(SIZEOF_POLYWORD == 4);
-#endif
+        EncodeWord(&m_buff[i], n);
     }
+
+    void WriteBytes(const byte *ptr, size_t len) {
+        m_buff.insert(m_buff.end(), ptr, ptr + len);
+    }
+
+    void Flush() {}
+};
+
+struct FDWriter
+{
+    TaskData *taskData;
+    int fd;
+    static constexpr size_t BUF_SIZE = 64 * 1024;
+    byte m_buf[BUF_SIZE];
+    size_t m_pos = 0;
+
+    void WriteWord(POLYUNSIGNED n) {
+        if (m_pos + SIZEOF_POLYWORD > BUF_SIZE) Flush();
+        EncodeWord(m_buf + m_pos, n);
+        m_pos += SIZEOF_POLYWORD;
+    }
+
+    void WriteBytes(const byte *ptr, size_t len) {
+        while (len > 0) {
+            size_t space = BUF_SIZE - m_pos;
+            size_t chunk = std::min(len, space);
+            memcpy(m_buf + m_pos, ptr, chunk);
+            m_pos += chunk;
+            ptr += chunk;
+            len -= chunk;
+            if (m_pos >= BUF_SIZE) Flush();
+        }
+    }
+
+    void Flush() {
+        size_t written = 0;
+        while (written < m_pos) {
+            ssize_t n = write(fd, m_buf + written, m_pos - written);
+            if (n <= 0)
+                raise_exception_string(taskData, EXC_Fail, "exportSmallToFD: write failed");
+            written += n;
+        }
+        m_pos = 0;
+    }
+};
+
+template<typename Writer>
+struct ProcessExport
+{
+    TaskData *taskData;
+    Writer writer;
+    std::vector<POLYUNSIGNED> m_stack;
+    std::unordered_map<POLYUNSIGNED, POLYUNSIGNED> m_index;
 
     void ScanObjectAddress(PolyWord w) {
         auto it = m_index.find(w.AsUnsigned());
@@ -119,7 +180,8 @@ struct ProcessExportAddresses
     void Process(POLYUNSIGNED root) {
         PolyWord rootw = PolyWord::FromUnsigned(root);
         if (rootw.IsTagged()) {
-            WriteWord(rootw.AsUnsigned());
+            writer.WriteWord(rootw.AsUnsigned());
+            writer.Flush();
             return;
         }
         ASSERT(rootw.IsDataPtr());
@@ -152,7 +214,7 @@ struct ProcessExportAddresses
                 lengthWord &= _OBJ_PRIVATE_FLAGS_MASK;
             }
 
-            WriteWord(lengthWord);
+            writer.WriteWord(lengthWord);
 
             curr += 1 << POLY_TAGSHIFT;
             m_index[w] = curr;
@@ -164,8 +226,7 @@ struct ProcessExportAddresses
 
             size_t length = OBJ_OBJECT_LENGTH(lengthWord);
             if (OBJ_IS_BYTE_OBJECT(lengthWord)) {
-                byte *ptr = obj->AsBytePtr();
-                m_buff.insert(m_buff.end(), ptr, ptr + length * sizeof(PolyWord));
+                writer.WriteBytes(obj->AsBytePtr(), length * sizeof(PolyWord));
                 continue;
             }
 
@@ -173,24 +234,20 @@ struct ProcessExportAddresses
             for (PolyWord *pt = obj->AsWordPtr(); pt < end; pt++) {
                 PolyWord val = *pt;
                 if (IS_INT(val) || val == PolyWord::FromUnsigned(0)) {
-                    WriteWord(val.AsUnsigned());
+                    writer.WriteWord(val.AsUnsigned());
                     continue;
                 }
                 ASSERT(val.IsDataPtr());
-                WriteWord(m_index[val.AsUnsigned()]);
+                writer.WriteWord(m_index[val.AsUnsigned()]);
             }
         }
 
-        WriteWord(m_index[rootw.AsUnsigned()]);
+        writer.WriteWord(m_index[rootw.AsUnsigned()]);
+        writer.Flush();
     }
-
-    TaskData *taskData;
-    std::vector<byte> m_buff;
-    std::vector<POLYUNSIGNED> m_stack;
-    std::unordered_map<POLYUNSIGNED, POLYUNSIGNED> m_index;
 };
 
-// RTS call entry.
+// RTS call: export to Word8Vector
 POLYUNSIGNED PolySmallExport(POLYUNSIGNED threadId, POLYUNSIGNED obj)
 {
     TaskData *taskData = TaskData::FindTaskForId(threadId);
@@ -200,11 +257,11 @@ POLYUNSIGNED PolySmallExport(POLYUNSIGNED threadId, POLYUNSIGNED obj)
     Handle result = 0;
 
     try {
-        ProcessExportAddresses process{.taskData = taskData};
+        ProcessExport<VectorWriter> process{.taskData = taskData};
         process.Process(obj);
 
         result = taskData->saveVec.push(
-            C_string_to_Poly(taskData, (const char*)process.m_buff.data(), process.m_buff.size()));
+            C_string_to_Poly(taskData, (const char*)process.writer.m_buff.data(), process.writer.m_buff.size()));
     } catch (...) { } // If an ML exception is raised
 
     taskData->saveVec.reset(reset);
@@ -213,9 +270,31 @@ POLYUNSIGNED PolySmallExport(POLYUNSIGNED threadId, POLYUNSIGNED obj)
     else return result->Word().AsUnsigned();
 }
 
+// RTS call: export directly to file descriptor
+POLYUNSIGNED PolySmallExportToFD(POLYUNSIGNED threadId, POLYUNSIGNED fd, POLYUNSIGNED obj)
+{
+    TaskData *taskData = TaskData::FindTaskForId(threadId);
+    ASSERT(taskData != 0);
+    taskData->PreRTSCall();
+    Handle reset = taskData->saveVec.mark();
+
+    try {
+        ProcessExport<FDWriter> process{
+            .taskData = taskData,
+            .writer = {.taskData = taskData, .fd = (int)PolyWord::FromUnsigned(fd).UnTagged()}
+        };
+        process.Process(obj);
+    } catch (...) { } // If an ML exception is raised
+
+    taskData->saveVec.reset(reset);
+    taskData->PostRTSCall();
+    return TAGGED(0).AsUnsigned();
+}
+
 struct _entrypts smallExporterEPT[] =
 {
     { "PolySmallExport",       (polyRTSFunction)&PolySmallExport},
+    { "PolySmallExportToFD",   (polyRTSFunction)&PolySmallExportToFD},
 
     { NULL, NULL} // End of list.
 };
