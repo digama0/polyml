@@ -64,27 +64,38 @@ extern "C" {
 
 #define UNASSIGNED (POLYUNSIGNED)-(1 << POLY_TAGSHIFT)
 
+static bool IsLittleEndian() {
+    uint16_t number = 0x1;
+    return *reinterpret_cast<uint8_t*>(&number) == 0x1;
+}
+
+// Encode `n` to the buffer as 4 or 8 byte little endian.
 static void EncodeWord(byte *buf, POLYUNSIGNED n) {
-    buf[0] = (byte)(n & 0xFF);
-    buf[1] = (byte)((n >> 8) & 0xFF);
-    buf[2] = (byte)((n >> 16) & 0xFF);
-    buf[3] = (byte)((n >> 24) & 0xFF);
+    if (IsLittleEndian()) {
+        std::memcpy(buf, &n, sizeof(POLYUNSIGNED));
+    } else {
+        buf[0] = (byte)(n & 0xFF);
+        buf[1] = (byte)((n >> 8) & 0xFF);
+        buf[2] = (byte)((n >> 16) & 0xFF);
+        buf[3] = (byte)((n >> 24) & 0xFF);
 #if (SIZEOF_POLYWORD == 8)
-    buf[4] = (byte)((n >> 32) & 0xFF);
-    buf[5] = (byte)((n >> 40) & 0xFF);
-    buf[6] = (byte)((n >> 48) & 0xFF);
-    buf[7] = (byte)((n >> 56) & 0xFF);
+        buf[4] = (byte)((n >> 32) & 0xFF);
+        buf[5] = (byte)((n >> 40) & 0xFF);
+        buf[6] = (byte)((n >> 48) & 0xFF);
+        buf[7] = (byte)((n >> 56) & 0xFF);
 #else
-    ASSERT(SIZEOF_POLYWORD == 4);
+        ASSERT(SIZEOF_POLYWORD == 4);
 #endif
+    }
 }
 
 struct VectorWriter
 {
     std::vector<byte> m_buff;
+    std::vector<size_t> m_holes;
 
     void WriteWord(POLYUNSIGNED n) {
-        auto i = m_buff.size();
+        size_t i = m_buff.size();
         m_buff.resize(i + SIZEOF_POLYWORD);
         EncodeWord(&m_buff[i], n);
     }
@@ -93,44 +104,116 @@ struct VectorWriter
         m_buff.insert(m_buff.end(), ptr, ptr + len);
     }
 
-    void Flush() {}
+    void AddHole(POLYUNSIGNED targetAddr) {
+        size_t i = m_buff.size();
+        m_holes.push_back(i);
+        m_buff.resize(i + SIZEOF_POLYWORD);
+        // write hole in native endian (possibly unaligned write)
+        std::memcpy(&m_buff[i], &targetAddr, sizeof(POLYUNSIGNED));
+    }
+
+    void ResolveHoles(POLYUNSIGNED, POLYUNSIGNED) {}
+
+    void ResolveAllHoles(std::unordered_map<POLYUNSIGNED, POLYUNSIGNED>& indices) {
+        for (size_t offset : m_holes) {
+            byte* hole = &m_buff[offset];
+            POLYUNSIGNED holeVal;
+            // read hole in native endian (possibly unaligned read)
+            std::memcpy(&holeVal, hole, sizeof(POLYUNSIGNED));
+            EncodeWord(hole, indices[holeVal]); // write final value in little endian
+        }
+    }
 };
 
 struct FDWriter
 {
     TaskData *taskData;
     int fd;
-    static constexpr size_t BUF_SIZE = 64 * 1024;
-    byte m_buf[BUF_SIZE];
-    size_t m_pos = 0;
+    static const size_t BUF_SIZE = 64 * 1024;
+    std::vector<byte> m_buff;
+    size_t m_base = 0;
+    std::vector<size_t> m_holes;
+
+    void WriteAll(const byte *ptr, size_t len) {
+        while (len != 0) {
+            ssize_t n = write(fd, ptr, len);
+            if (n <= 0)
+                raise_exception_string(taskData, EXC_Fail, "exportSmallToFD: write failed");
+            len -= n;
+            ptr += n;
+        }
+    }
 
     void WriteWord(POLYUNSIGNED n) {
-        if (m_pos + SIZEOF_POLYWORD > BUF_SIZE) Flush();
-        EncodeWord(m_buf + m_pos, n);
-        m_pos += SIZEOF_POLYWORD;
+        size_t pos = m_buff.size();
+        m_buff.resize(pos + SIZEOF_POLYWORD);
+        EncodeWord(&m_buff[pos], n);
+        if (m_holes.empty() && pos + SIZEOF_POLYWORD >= BUF_SIZE) Flush();
     }
 
     void WriteBytes(const byte *ptr, size_t len) {
-        while (len > 0) {
-            size_t space = BUF_SIZE - m_pos;
-            size_t chunk = std::min(len, space);
-            memcpy(m_buf + m_pos, ptr, chunk);
-            m_pos += chunk;
-            ptr += chunk;
-            len -= chunk;
-            if (m_pos >= BUF_SIZE) Flush();
+        if (m_holes.empty()) {
+            if (len > BUF_SIZE) {
+                Flush();
+                WriteAll(ptr, len);
+                m_base += len;
+            } else {
+                size_t pos = m_buff.size();
+                m_buff.resize(pos + len);
+                memcpy(&m_buff[pos], ptr, len);
+                if (pos + len >= BUF_SIZE) Flush();
+            }
+        } else {
+            size_t pos = m_buff.size();
+            m_buff.resize(pos + len);
+            memcpy(&m_buff[pos], ptr, len);
         }
     }
 
-    void Flush() {
-        size_t written = 0;
-        while (written < m_pos) {
-            ssize_t n = write(fd, m_buf + written, m_pos - written);
-            if (n <= 0)
-                raise_exception_string(taskData, EXC_Fail, "exportSmallToFD: write failed");
-            written += n;
+    void AddHole(POLYUNSIGNED targetAddr) {
+        m_holes.push_back(m_base + m_buff.size());
+        size_t pos = m_buff.size();
+        m_buff.resize(pos + SIZEOF_POLYWORD);
+        // write hole in native endian (possibly unaligned write)
+        std::memcpy(&m_buff[pos], &targetAddr, sizeof(POLYUNSIGNED));
+    }
+
+    void ResolveHoles(POLYUNSIGNED targetAddr, POLYUNSIGNED finalIndex) {
+        if (m_holes.empty()) return;
+
+        size_t firstHoleBefore = m_holes[0];
+
+        m_holes.erase(std::remove_if(m_holes.begin(), m_holes.end(), [&](size_t holeOffset) {
+            byte* hole = &m_buff[holeOffset - m_base];
+            POLYUNSIGNED holeVal;
+            // read hole in native endian (possibly unaligned read)
+            std::memcpy(&holeVal, hole, sizeof(POLYUNSIGNED));
+            if (holeVal != targetAddr) return false;
+            EncodeWord(hole, finalIndex); // write final value in little endian
+            return true; // remove hole
+        }), m_holes.end());
+
+        if (m_holes.empty()) {
+            if (m_buff.size() >= BUF_SIZE) Flush();
+        } else if (m_holes[0] != firstHoleBefore) {
+            size_t len = m_holes[0] - m_base;
+            // don't actually flush unless it's worth it
+            if (len < BUF_SIZE || m_buff.size() / 16 >= len) return;
+            WriteAll(m_buff.data(), len);
+            m_buff.erase(m_buff.begin(), m_buff.begin() + len);
+            m_base += len;
         }
-        m_pos = 0;
+    }
+
+    void ResolveAllHoles(std::unordered_map<POLYUNSIGNED, POLYUNSIGNED>&) {}
+
+    void Flush() {
+        ASSERT(m_holes.empty());
+        if (!m_buff.empty()) {
+            WriteAll(m_buff.data(), m_buff.size());
+            m_base += m_buff.size();
+            m_buff.clear();
+        }
     }
 };
 
@@ -146,8 +229,6 @@ struct ProcessExport
         auto it = m_index.find(w.AsUnsigned());
         if (it == m_index.end())
             m_stack.push_back(w.AsUnsigned());
-        else if (it->second == UNASSIGNED)
-            raise_exception_string(taskData, EXC_Fail, "cycle detected in exportSmall");
     }
 
     void ScanAddressesInObjectDirect(PolyObject *obj) {
@@ -181,7 +262,6 @@ struct ProcessExport
         PolyWord rootw = PolyWord::FromUnsigned(root);
         if (rootw.IsTagged()) {
             writer.WriteWord(rootw.AsUnsigned());
-            writer.Flush();
             return;
         }
         ASSERT(rootw.IsDataPtr());
@@ -238,12 +318,21 @@ struct ProcessExport
                     continue;
                 }
                 ASSERT(val.IsDataPtr());
-                writer.WriteWord(m_index[val.AsUnsigned()]);
+                POLYUNSIGNED target = val.AsUnsigned();
+                POLYUNSIGNED value = m_index[target];
+                if (value == UNASSIGNED) { // cycle!
+                    writer.AddHole(target);
+                } else {
+                    writer.WriteWord(value);
+                }
             }
+
+            writer.ResolveHoles(w, curr);
         }
 
+        writer.ResolveAllHoles(m_index);
+
         writer.WriteWord(m_index[rootw.AsUnsigned()]);
-        writer.Flush();
     }
 };
 
@@ -284,6 +373,7 @@ POLYUNSIGNED PolySmallExportToFD(POLYUNSIGNED threadId, POLYUNSIGNED fd, POLYUNS
             .writer = {.taskData = taskData, .fd = (int)PolyWord::FromUnsigned(fd).UnTagged()}
         };
         process.Process(obj);
+        process.writer.Flush();
     } catch (...) { } // If an ML exception is raised
 
     taskData->saveVec.reset(reset);
