@@ -9,12 +9,12 @@
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
     License version 2.1 as published by the Free Software Foundation.
-    
+
     This library is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
     Lesser General Public License for more details.
-    
+
     You should have received a copy of the GNU Lesser General Public
     License along with this library; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
@@ -50,11 +50,11 @@ in
             in
                 OS.Process.exit result (* Perform close-down actions. *)
             end
-            
+
             val callExport: string * (unit->unit) -> unit = RunCall.rtsCallFull2 "PolyExport"
             and callExportP: string * (unit->unit) -> unit = RunCall.rtsCallFull2 "PolyExportPortable"
             and callSmallExport: word -> Word8Vector.vector = RunCall.rtsCallFull1 "PolySmallExport"
-            and callSmallExportToFD: int * word -> unit = RunCall.rtsCallFull2 "PolySmallExportToFD"
+            and callSmallExportToFD: Posix.IO.file_desc * word -> unit = RunCall.rtsCallFull2 "PolySmallExportToFD"
         in
             (* The equivalent of atExit except that functions are added to
                the list persistently and of course the functions are executed
@@ -64,14 +64,14 @@ in
                the basis library. *)
             val onEntry : (unit->unit) -> unit =
                 ThreadLib.protect onEntryMutex LibrarySupport.addOnEntry
-        
+
             (* Export functions - write out the function and everything reachable from it. *)
             fun export(filename, f) = callExport(filename, runFunction f)
             and exportPortable(filename, f) = callExportP(filename, runFunction f)
             and exportSmall(root: 'a): Word8Vector.vector = callSmallExport(RunCall.unsafeCast root)
-            and exportSmallToFD(fd: int, root: 'a): unit = callSmallExportToFD(fd, RunCall.unsafeCast root)
+            and exportSmallToFD(fd: Posix.IO.file_desc, root: 'a): unit = callSmallExportToFD(fd, RunCall.unsafeCast root)
         end
-        
+
         local
             (* shareCommonData needs to be able to take a value of any type. *)
             val callShare: word -> unit = RunCall.rtsCallFull1 "PolyShareCommonData"
@@ -89,13 +89,13 @@ in
             and showSize(x:'a) = callShowSize(RunCall.unsafeCast x)
             and objProfile(x:'a) = callObjProfile(RunCall.unsafeCast x)
         end
-    
+
         val fullGC: unit -> unit = RunCall.rtsCallFull0 "PolyFullGC"
 
         val pointerEq = RunCall.pointerEq
 
         val rtsVersion: unit -> int = RunCall.rtsCallFast0 "PolyGetPolyVersionNumber"
-        
+
         local
             val doCall: int * unit -> string = RunCall.rtsCallFull2 "PolySpecificGeneral"
         in

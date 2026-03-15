@@ -47,6 +47,7 @@
 #include "bitmap.h"
 #include "sys.h"
 #include "run_time.h"
+#include "io_internal.h"
 
 #if (defined(_WIN32))
 #define NOMEMORY ERROR_NOT_ENOUGH_MEMORY
@@ -368,9 +369,10 @@ POLYUNSIGNED PolySmallExportToFD(POLYUNSIGNED threadId, POLYUNSIGNED fd, POLYUNS
     Handle reset = taskData->saveVec.mark();
 
     try {
+        int fdInt = getStreamFileDescriptor(taskData, PolyWord::FromUnsigned(fd));
         ProcessExport<FDWriter> process{
             .taskData = taskData,
-            .writer = {.taskData = taskData, .fd = (int)PolyWord::FromUnsigned(fd).UnTagged()}
+            .writer = {.taskData = taskData, .fd = fdInt}
         };
         process.Process(obj);
         process.writer.Flush();
