@@ -132,7 +132,7 @@ struct FDWriter
     int fd;
     static const size_t BUF_SIZE = 64 * 1024;
     std::vector<byte> m_buff;
-    size_t m_base = 0;
+    size_t m_base;
     std::vector<size_t> m_holes;
 
     void WriteAll(const byte *ptr, size_t len) {
@@ -372,7 +372,7 @@ POLYUNSIGNED PolySmallExportToFD(POLYUNSIGNED threadId, POLYUNSIGNED fd, POLYUNS
         int fdInt = getStreamFileDescriptor(taskData, PolyWord::FromUnsigned(fd));
         ProcessExport<FDWriter> process{
             .taskData = taskData,
-            .writer = {.taskData = taskData, .fd = fdInt}
+            .writer = {.taskData = taskData, .fd = fdInt, .m_base = 0}
         };
         process.Process(obj);
         process.writer.Flush();
