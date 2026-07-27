@@ -149,7 +149,7 @@ am__libpolyml_la_SOURCES_DIST = arb.cpp bitmap.cpp bytecode.cpp \
 	processes.cpp profiling.cpp quick_gc.cpp reals.cpp \
 	rts_module.cpp rtsentry.cpp run_time.cpp save_vec.cpp \
 	savestate.cpp scanaddrs.cpp sharedata.cpp sighandler.cpp \
-	statistics.cpp timing.cpp xwindows.cpp interpreter.cpp \
+	small_exporter.cpp statistics.cpp timing.cpp xwindows.cpp interpreter.cpp \
 	arm64.cpp arm64assembly.S x86_dep.cpp x86assembly_gas64.S \
 	x86assembly_gas32.S machoexport.cpp elfexport.cpp \
 	pecoffexport.cpp basicio.cpp unix_specific.cpp osmemunix.cpp \
@@ -180,13 +180,13 @@ am_libpolyml_la_OBJECTS = arb.lo bitmap.lo bytecode.lo \
 	polystring.lo process_env.lo processes.lo profiling.lo \
 	quick_gc.lo reals.lo rts_module.lo rtsentry.lo run_time.lo \
 	save_vec.lo savestate.lo scanaddrs.lo sharedata.lo \
-	sighandler.lo statistics.lo timing.lo xwindows.lo \
+	sighandler.lo small_exporter.lo statistics.lo timing.lo xwindows.lo \
 	$(am__objects_1) $(am__objects_2) $(am__objects_3)
 libpolyml_la_OBJECTS = $(am_libpolyml_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
-am__v_lt_1 = 
+am__v_lt_1 =
 libpolyml_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CXXLD) $(AM_CXXFLAGS) \
 	$(CXXFLAGS) $(libpolyml_la_LDFLAGS) $(LDFLAGS) -o $@
@@ -197,11 +197,11 @@ am__v_P_1 = :
 AM_V_GEN = $(am__v_GEN_@AM_V@)
 am__v_GEN_ = $(am__v_GEN_@AM_DEFAULT_V@)
 am__v_GEN_0 = @echo "  GEN     " $@;
-am__v_GEN_1 = 
+am__v_GEN_1 =
 AM_V_at = $(am__v_at_@AM_V@)
 am__v_at_ = $(am__v_at_@AM_DEFAULT_V@)
 am__v_at_0 = @
-am__v_at_1 = 
+am__v_at_1 =
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__maybe_remake_depfiles = depfiles
@@ -229,6 +229,7 @@ am__depfiles_remade = ./$(DEPDIR)/arb.Plo ./$(DEPDIR)/arm64.Plo \
 	./$(DEPDIR)/run_time.Plo ./$(DEPDIR)/save_vec.Plo \
 	./$(DEPDIR)/savestate.Plo ./$(DEPDIR)/scanaddrs.Plo \
 	./$(DEPDIR)/sharedata.Plo ./$(DEPDIR)/sighandler.Plo \
+	./$(DEPDIR)/small_exporter.Plo \
 	./$(DEPDIR)/statistics.Plo ./$(DEPDIR)/timing.Plo \
 	./$(DEPDIR)/unix_specific.Plo ./$(DEPDIR)/winbasicio.Plo \
 	./$(DEPDIR)/windows_specific.Plo ./$(DEPDIR)/winguiconsole.Plo \
@@ -245,7 +246,7 @@ LTCPPASCOMPILE = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 AM_V_CPPAS = $(am__v_CPPAS_@AM_V@)
 am__v_CPPAS_ = $(am__v_CPPAS_@AM_DEFAULT_V@)
 am__v_CPPAS_0 = @echo "  CPPAS   " $@;
-am__v_CPPAS_1 = 
+am__v_CPPAS_1 =
 CXXCOMPILE = $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
 	$(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS)
 LTCXXCOMPILE = $(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) \
@@ -255,7 +256,7 @@ LTCXXCOMPILE = $(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) \
 AM_V_CXX = $(am__v_CXX_@AM_V@)
 am__v_CXX_ = $(am__v_CXX_@AM_DEFAULT_V@)
 am__v_CXX_0 = @echo "  CXX     " $@;
-am__v_CXX_1 = 
+am__v_CXX_1 =
 CXXLD = $(CXX)
 CXXLINK = $(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CXXLD) $(AM_CXXFLAGS) \
@@ -263,7 +264,7 @@ CXXLINK = $(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) \
 AM_V_CXXLD = $(am__v_CXXLD_@AM_V@)
 am__v_CXXLD_ = $(am__v_CXXLD_@AM_DEFAULT_V@)
 am__v_CXXLD_0 = @echo "  CXXLD   " $@;
-am__v_CXXLD_1 = 
+am__v_CXXLD_1 =
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 LTCOMPILE = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
@@ -273,7 +274,7 @@ LTCOMPILE = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 AM_V_CC = $(am__v_CC_@AM_V@)
 am__v_CC_ = $(am__v_CC_@AM_DEFAULT_V@)
 am__v_CC_0 = @echo "  CC      " $@;
-am__v_CC_1 = 
+am__v_CC_1 =
 CCLD = $(CC)
 LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
@@ -281,7 +282,7 @@ LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
 AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
-am__v_CCLD_1 = 
+am__v_CCLD_1 =
 SOURCES = $(libpolyml_la_SOURCES)
 DIST_SOURCES = $(am__libpolyml_la_SOURCES_DIST)
 am__can_run_installinfo = \
@@ -521,6 +522,7 @@ noinst_HEADERS = \
 	scanaddrs.h \
 	sharedata.h \
 	sighandler.h \
+	small_exporter.h \
 	statistics.h \
 	sys.h \
 	timing.h \
@@ -569,6 +571,7 @@ libpolyml_la_SOURCES = \
     scanaddrs.cpp \
     sharedata.cpp \
     sighandler.cpp \
+    small_exporter.cpp \
     statistics.cpp \
     timing.cpp \
     xwindows.cpp \
@@ -647,7 +650,7 @@ clean-libLTLIBRARIES:
 	  rm -f $${locs}; \
 	}
 
-libpolyml.la: $(libpolyml_la_OBJECTS) $(libpolyml_la_DEPENDENCIES) $(EXTRA_libpolyml_la_DEPENDENCIES) 
+libpolyml.la: $(libpolyml_la_OBJECTS) $(libpolyml_la_DEPENDENCIES) $(EXTRA_libpolyml_la_DEPENDENCIES)
 	$(AM_V_CXXLD)$(libpolyml_la_LINK) -rpath $(libdir) $(libpolyml_la_OBJECTS) $(libpolyml_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
@@ -703,6 +706,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/scanaddrs.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sharedata.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sighandler.Plo@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/small_exporter.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/statistics.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/timing.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/unix_specific.Plo@am__quote@ # am--include-marker
@@ -964,6 +968,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/scanaddrs.Plo
 	-rm -f ./$(DEPDIR)/sharedata.Plo
 	-rm -f ./$(DEPDIR)/sighandler.Plo
+	-rm -f ./$(DEPDIR)/small_exporter.Plo
 	-rm -f ./$(DEPDIR)/statistics.Plo
 	-rm -f ./$(DEPDIR)/timing.Plo
 	-rm -f ./$(DEPDIR)/unix_specific.Plo
@@ -1067,6 +1072,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/scanaddrs.Plo
 	-rm -f ./$(DEPDIR)/sharedata.Plo
 	-rm -f ./$(DEPDIR)/sighandler.Plo
+	-rm -f ./$(DEPDIR)/small_exporter.Plo
 	-rm -f ./$(DEPDIR)/statistics.Plo
 	-rm -f ./$(DEPDIR)/timing.Plo
 	-rm -f ./$(DEPDIR)/unix_specific.Plo
